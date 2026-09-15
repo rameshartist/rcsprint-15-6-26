@@ -78,17 +78,6 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
           <div id="billErr" class="checkout-error" style="display:none"></div>
         </section>
 
-        <section class="checkout-card checkout-payment-card">
-          <div class="checkout-card-title"><i class="fa-regular fa-credit-card" aria-hidden="true"></i><h2>Payment Method <small>100% Secure Payments</small></h2></div>
-          <div class="checkout-payment-options" aria-label="Supported Razorpay payment options">
-            <label class="is-selected"><input type="radio" name="payVisual" checked><span><strong>UPI / QR Code</strong><small>Pay using any UPI app</small></span><em>UPI</em></label>
-            <label><input type="radio" name="payVisual"><span><strong>Credit / Debit Card</strong><small>Visa, Mastercard, RuPay</small></span><em>VISA • MC</em></label>
-            <label><input type="radio" name="payVisual"><span><strong>Net Banking</strong><small>All major banks supported</small></span><em><i class="fa-solid fa-building-columns" aria-hidden="true"></i></em></label>
-            <label><input type="radio" name="payVisual"><span><strong>Wallets</strong><small>PhonePe, Paytm, Amazon Pay &amp; more</small></span><em>Wallet</em></label>
-          </div>
-          <div class="checkout-secure-note"><i class="fa-solid fa-lock" aria-hidden="true"></i> Your payment information is secure with 256-bit SSL encryption.</div>
-        </section>
-
         <section class="checkout-consent-actions">
           <label class="checkout-consent"><input type="checkbox" id="ship-consent"><span><b>Shipping charges are extra</b> and will be calculated based on package weight and delivery location. Final charges will be shared before dispatch. <b>Customer needs to collect the parcel from the transport office.</b></span></label>
           <div id="shipConsentErr" class="checkout-error" style="display:none"></div>
@@ -122,16 +111,18 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
               </div>
               <div class="checkout-item-side">
                 <span><?= number_format((int)($item['quantity'] ?? 0)) ?></span>
-                <?php if (!empty($item['id'])): ?><button type="button" onclick="removeCheckoutItem('<?= htmlspecialchars((string)$item['id'], ENT_QUOTES) ?>')" aria-label="Remove <?= htmlspecialchars($item['product_name'] ?? 'item', ENT_QUOTES) ?>">×</button><?php endif; ?>
+                <?php if (!$isCustomCheckout && !empty($item['id'])): ?><button type="button" onclick="removeCheckoutItem('<?= htmlspecialchars((string)$item['id'], ENT_QUOTES) ?>')" aria-label="Remove <?= htmlspecialchars($item['product_name'] ?? 'item', ENT_QUOTES) ?>">×</button><?php endif; ?>
               </div>
             </article>
             <?php endforeach; ?>
           </div>
+          <?php if (!$isCustomCheckout): ?>
           <div class="checkout-coupon-mini">
             <div><i class="fa-solid fa-tag" aria-hidden="true"></i> Have a coupon?</div>
             <div class="coupon-row"><input id="couponInp" placeholder="Enter coupon code" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"><button class="btn btn-outline btn-sm" onclick="applyCouponCheckout()">Apply</button></div>
             <div id="couponMsg"></div>
           </div>
+          <?php endif; ?>
           <div class="checkout-totals" id="totalsBox">
             <div><span>Subtotal</span><strong>₹<?= number_format($checkoutSubtotal) ?></strong></div>
             <?php if ($checkoutDiscount > 0): ?><div class="is-discount"><span>Discount</span><strong>-₹<?= number_format($checkoutDiscount) ?></strong></div><?php endif; ?>
@@ -479,12 +470,6 @@ document.addEventListener('DOMContentLoaded', () => {
   ['s-business','s-add1','s-add2','s-city','s-state','s-pin'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', syncBillingFromShipping);
-  });
-  document.querySelectorAll('.checkout-payment-options label').forEach(label => {
-    label.addEventListener('click', () => {
-      document.querySelectorAll('.checkout-payment-options label').forEach(item => item.classList.remove('is-selected'));
-      label.classList.add('is-selected');
-    });
   });
   prefillCheckoutFromProfile();
 });

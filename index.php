@@ -521,8 +521,14 @@ if ($uri === '/profile' && $method === 'GET') {
     \Auth\Auth::require();
     $user = \Auth\Auth::user();
     $profile = \Auth\Auth::getProfile((int)$user['id']);
-    try { $orders = \Orders\OrderManager::getUserOrders((int)$user['id']); }
-    catch (\Throwable) { $orders = []; }
+    try { $allOrders = \Orders\OrderManager::getUserOrders((int)$user['id']); }
+    catch (\Throwable) { $allOrders = []; }
+    $orders = array_values(array_filter($allOrders, static fn(array $order): bool =>
+        (string)($order['order_type'] ?? 'normal') !== 'custom' && (int)($order['custom_quote_id'] ?? 0) === 0
+    ));
+    $customFulfillmentOrders = array_values(array_filter($allOrders, static fn(array $order): bool =>
+        (string)($order['order_type'] ?? 'normal') === 'custom' || (int)($order['custom_quote_id'] ?? 0) > 0
+    ));
     try { $customOrders=Database::rows("SELECT * FROM custom_quote_requests WHERE user_id=? ORDER BY created_at DESC",[(int)$user['id']]); } catch (\Throwable) { $customOrders=[]; }
     $reviewableItems = \Reviews\ProductReview::reviewableItemsForUser((int)$user['id']);
     $myReviews = \Reviews\ProductReview::userReviews((int)$user['id']);
@@ -686,7 +692,8 @@ if (preg_match('#^/(custom-cart|custom-checkout)/([A-Za-z0-9_-]{24,120})$#', $ur
         $user=\Auth\Auth::user(); if((int)($quote['user_id']??0)!==(int)$user['id']){http_response_code(403);view('info-page',['page'=>['title'=>'Account required','intro'=>'Please login with the account linked to this custom order.'],'settingsMap'=>[]]);exit;}
         $added=\Cart\Cart::addCustomQuote($quote,(int)$user['id']); if(!($added['ok']??false)){http_response_code(422);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>$added['msg']??'Please contact us.'],'settingsMap'=>[]]);exit;}
         $cartItems=array_values(array_filter(\Cart\Cart::get(),static fn($item)=>(int)($item['custom_quote_id']??0)===(int)$quote['id']));$totals=\Cart\Cart::totals($cartItems);
-        if($mode==='custom-cart'){view('custom-cart',compact('quote','cartItems','totals','user','token'));exit;} $isCustomCheckout=true;view('checkout',compact('quote','cartItems','totals','user','token','isCustomCheckout'));exit;
+        if($mode==='custom-cart') redirect('/custom-checkout/'.rawurlencode($token));
+        $isCustomCheckout=true;view('checkout',compact('quote','cartItems','totals','user','token','isCustomCheckout'));exit;
     }catch(\Throwable $e){error_log($e->getMessage());http_response_code(500);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>'Please try again later.'],'settingsMap'=>[]]);exit;}
 }
 

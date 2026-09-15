@@ -365,7 +365,8 @@ class OrderManager
         if ($onlyCustomQuoteId) $cartItems = array_values(array_filter($cartItems, static fn($item) => (int)($item['custom_quote_id'] ?? 0) === $onlyCustomQuoteId));
         if (empty($cartItems)) return ['ok' => false, 'msg' => 'Cart is empty'];
 
-        $couponCode = $params['coupon_code'] ?? null;
+        // An approved custom quote has a fixed payable amount and must never receive cart coupons.
+        $couponCode = $onlyCustomQuoteId > 0 ? null : ($params['coupon_code'] ?? null);
         $totals = \Cart\Cart::totals($cartItems, $couponCode);
         $billing = self::sanitizeBilling($params['billing'] ?? null);
         $shipping = self::sanitizeShipping($params['shipping'] ?? null);

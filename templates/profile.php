@@ -19,6 +19,8 @@ $profile = $profile ?? [];
 $billing = $profile['billing'] ?? [];
 $shipping = $profile['shipping'] ?? [];
 $orders = is_array($orders ?? null) ? $orders : [];
+$customOrders = is_array($customOrders ?? null) ? $customOrders : [];
+$customFulfillmentOrders = is_array($customFulfillmentOrders ?? null) ? $customFulfillmentOrders : [];
 $reviewableItems = is_array($reviewableItems ?? null) ? $reviewableItems : [];
 $myReviews = is_array($myReviews ?? null) ? $myReviews : [];
 $wishlistItems = is_array($wishlistItems ?? null) ? $wishlistItems : [];
@@ -49,6 +51,15 @@ $statusLabels = [
     'delivered' => 'Delivered',
     'cancelled' => 'Cancelled',
     'whatsapp_pending' => 'Pending',
+    'new' => 'Request Received',
+    'reviewing' => 'Under Review',
+    'quoted' => 'Quote Ready',
+    'sent_to_customer' => 'Quote Sent',
+    'customer_approved' => 'Approved',
+    'payment_pending' => 'Payment Pending',
+    'converted_to_order' => 'Paid',
+    'rejected' => 'Rejected',
+    'closed' => 'Closed',
 ];
 $designApprovalLabels = ['pending_review'=>'Pending Review','issue_found'=>'Issue Found','proof_uploaded'=>'Waiting for Your Approval','revision_requested'=>'Revision Requested','approved'=>'Approved'];
 $progressStatuses = ['new_order', 'received', 'design_approved', 'printing', 'other_process', 'processing', 'ready', 'whatsapp_pending'];
@@ -56,6 +67,44 @@ $totalOrders = count($orders);
 $progressOrders = count(array_filter($orders, static fn($order) => in_array((string)($order['status'] ?? ''), $progressStatuses, true)));
 $completedOrders = count(array_filter($orders, static fn($order) => (string)($order['status'] ?? '') === 'delivered'));
 $recentOrders = array_slice($orders, 0, 4);
+
+// Combine custom quote and fulfillment records into one customer-facing list.
+// Paid custom orders stay in the production orders table, but are presented only in My Custom Orders.
+$customOrdersByQuote = [];
+foreach ($customFulfillmentOrders as $customOrder) {
+    $quoteId = (int)($customOrder['custom_quote_id'] ?? 0);
+    if ($quoteId > 0) $customOrdersByQuote[$quoteId] = $customOrder;
+}
+$customOrderDisplay = [];
+foreach ($customOrders as $quote) {
+    $quoteId = (int)($quote['id'] ?? 0);
+    if (isset($customOrdersByQuote[$quoteId])) {
+        $customOrder = $customOrdersByQuote[$quoteId];
+        $customOrder['custom_request'] = $quote;
+        $customOrderDisplay[] = $customOrder;
+        unset($customOrdersByQuote[$quoteId]);
+        continue;
+    }
+    $customOrderDisplay[] = [
+        'order_id' => (string)($quote['request_code'] ?? ('CQ-' . $quoteId)),
+        'created_at' => $quote['created_at'] ?? null,
+        'total_amount' => (float)($quote['quoted_amount'] ?? 0),
+        'payment_status' => (string)($quote['payment_status'] ?? 'not_required'),
+        'payment_method' => '',
+        'status' => (string)($quote['status'] ?? 'new'),
+        'quote_token' => (string)($quote['quote_token'] ?? ''),
+        'is_quote_only' => true,
+        'custom_request' => $quote,
+        'items' => [[
+            'product_name' => (string)($quote['product_name'] ?? 'Custom Product'),
+            'quantity' => (int)($quote['quantity'] ?? 1),
+            'quality_name' => (string)($quote['material_type'] ?? 'Custom specification'),
+            'custom_size_dimension' => (string)($quote['size_dimension'] ?? ''),
+        ]],
+    ];
+}
+foreach ($customOrdersByQuote as $customOrder) $customOrderDisplay[] = $customOrder;
+usort($customOrderDisplay, static fn(array $a, array $b): int => strcmp((string)($b['created_at'] ?? ''), (string)($a['created_at'] ?? '')));
 $accountSettings = is_array($settingsMap ?? null) ? $settingsMap : [];
 if ($accountSettings === []) {
     try {
@@ -93,13 +142,13 @@ $accountIsImageFile = static function (?string $mime, ?string $name, ?string $pa
     return str_starts_with($mime, 'image/') || in_array($ext, ['jpg','jpeg','png','gif','webp','svg'], true);
 };
 
-$renderOrders = static function (array $list, bool $compact = false) use ($h, $statusLabels, $designApprovalLabels, $accountShortFileName, $accountNormalizeAssetPath, $accountIsImageFile): void {
+$renderOrders = static function (array $list, bool $compact = false, bool $custom = false) use ($h, $statusLabels, $designApprovalLabels, $accountShortFileName, $accountNormalizeAssetPath, $accountIsImageFile): void {
     if (empty($list)) {
         ?>
         <div class="account-empty-state">
           <i class="fa-solid fa-box-open"></i>
           <strong>No orders yet</strong>
-          <span>Your print orders will appear here after checkout.</span>
+          <span><?= $custom ? 'Your custom quotes and orders will appear here.' : 'Your print orders will appear here after checkout.' ?></span>
           <a href="/categories" class="btn btn-blue btn-sm">Browse Products</a>
         </div>
         <?php
@@ -117,6 +166,11 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
         $productTitle = implode(', ', array_filter(array_map(static fn($item) => (string)($item['product_name'] ?? ''), $items)));
         $orderPublicId = (string)($order['order_id'] ?? $order['id'] ?? '');
         $isPaid = in_array((string)($order['payment_status'] ?? ''), ['paid'], true);
+        $isQuoteOnly = !empty($order['is_quote_only']);
+        $customRequest = is_array($order['custom_request'] ?? null) ? $order['custom_request'] : [];
+        $canPayCustom = $custom && $isQuoteOnly && !$isPaid
+            && !empty($order['quote_token'])
+            && in_array($status, ['customer_approved', 'payment_pending'], true);
         $trackSteps = ['received', 'design_approved', 'printing', 'other_process', 'ready'];
         $trackStatus = $status === 'processing' ? 'other_process' : $status;
         $trackIndex = array_search($trackStatus, $trackSteps, true);
@@ -135,7 +189,7 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
           </summary>
           <div class="account-order-expanded">
             <div class="account-order-items-panel">
-              <div class="account-order-block-title"><strong>Order Items & Files</strong><span>Artwork and proofs are separated item-wise</span></div>
+              <div class="account-order-block-title"><strong><?= $custom ? 'Custom Order Details' : 'Order Items & Files' ?></strong><span><?= $isQuoteOnly ? 'Approved quote and specifications' : 'Artwork and proofs are separated item-wise' ?></span></div>
               <?php if (empty($items)): ?>
                 <p>No product items found for this order.</p>
               <?php else: ?>
@@ -157,20 +211,22 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
                     $canInitialArtworkUpload = $approvalId > 0 && (string)($item['design_choice'] ?? '') === 'upload' && empty($item['artwork_file_id']) && empty($item['artwork_filename']) && $designStatus === 'pending_review';
                     $canUploadArtwork = $approvalId > 0 && ($designStatus === 'issue_found' || $canInitialArtworkUpload);
                   ?>
-                    <article class="account-order-item-card <?= in_array($designStatus, ['issue_found','revision_requested'], true) ? 'account-design-issue' : '' ?>" data-design-approval-item="<?= $approvalId ?>" data-design-status="<?= $h($designStatus) ?>">
+                    <article class="account-order-item-card <?= $isQuoteOnly ? 'is-quote-only' : '' ?> <?= in_array($designStatus, ['issue_found','revision_requested'], true) ? 'account-design-issue' : '' ?>" data-design-approval-item="<?= $approvalId ?>" data-design-status="<?= $h($designStatus) ?>">
                       <div class="account-order-item-thumb">
                         <?php if ($productImg !== ''): ?><img src="<?= $h($productImg) ?>" alt="<?= $h($item['product_name'] ?? 'Product') ?>" loading="lazy"><?php else: ?><i class="fa-solid fa-box-open"></i><?php endif; ?>
                       </div>
                       <div class="account-order-item-main">
                         <div class="account-order-item-title">
                           <strong><?= $h($item['product_name'] ?? 'Product') ?></strong>
-                          <span data-design-status-label><?= $h($designApprovalLabels[$designStatus] ?? ucfirst(str_replace('_', ' ', $designStatus))) ?></span>
+                          <span data-design-status-label><?= $isQuoteOnly ? 'Quote Details' : $h($designApprovalLabels[$designStatus] ?? ucfirst(str_replace('_', ' ', $designStatus))) ?></span>
                         </div>
                         <p><?= number_format((float)($item['quantity'] ?? 0)) ?> qty × <?= $h($item['quality_name'] ?? 'Standard') ?></p>
+                        <?php if ($isQuoteOnly && !empty($item['custom_size_dimension'])): ?><small>Size / Dimension: <?= $h($item['custom_size_dimension']) ?></small><?php endif; ?>
+                        <?php if ($isQuoteOnly && !empty($customRequest['quote_note'])): ?><small><?= nl2br($h($customRequest['quote_note'])) ?></small><?php endif; ?>
                         <?php if (!empty($item['design_admin_note'])): ?><small class="<?= $designStatus === 'issue_found' ? 'account-design-alert-note' : '' ?>"><?= $designStatus === 'issue_found' ? '⚠ Action required: ' : '' ?><?= $h($item['design_admin_note']) ?></small><?php endif; ?>
                         <?php if (!empty($item['design_customer_note'])): ?><small class="account-design-customer-note">Your message: <?= $h($item['design_customer_note']) ?></small><?php endif; ?>
                       </div>
-                      <div class="account-order-file-grid">
+                      <?php if (!$isQuoteOnly): ?><div class="account-order-file-grid">
                         <div class="account-order-file" data-artwork-box>
                           <b>Your artwork</b>
                           <div data-artwork-preview>
@@ -223,7 +279,7 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
                         <?php else: ?>
                           <span data-design-action-status><?= $h($designApprovalLabels[$designStatus] ?? ucfirst(str_replace('_', ' ', $designStatus))) ?></span>
                         <?php endif; ?>
-                      </div>
+                      </div><?php endif; ?>
                       <div class="account-order-live-msg" data-design-live-msg hidden></div>
                     </article>
                   <?php endforeach; ?>
@@ -232,22 +288,23 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
             <div class="account-order-bottom-bar">
             <div class="account-order-info-card">
               <strong>Payment</strong>
-              <p><?= $h(ucfirst((string)($order['payment_status'] ?? 'pending'))) ?> · <?= $h(ucfirst((string)($order['payment_method'] ?? ''))) ?></p>
+              <p><?= $h(ucwords(str_replace('_', ' ', (string)($order['payment_status'] ?? 'pending')))) ?><?php if (!empty($order['payment_method'])): ?> · <?= $h(ucfirst((string)$order['payment_method'])) ?><?php endif; ?></p>
               <?php if (!empty($order['payment_id'])): ?><small>Payment ID: <?= $h($order['payment_id']) ?></small><?php endif; ?>
             </div>
             <div class="account-order-actions-list" aria-label="Order actions">
               <strong>Actions</strong>
-              <button type="button" onclick="openAccountOrder(this)"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Track Order</button>
+              <?php if ($canPayCustom): ?><a href="/custom-checkout/<?= rawurlencode((string)$order['quote_token']) ?>"><i class="fa-solid fa-lock" aria-hidden="true"></i> Pay Custom Order</a><?php endif; ?>
+              <?php if (!$isQuoteOnly): ?><button type="button" onclick="openAccountOrder(this)"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Track Order</button><?php endif; ?>
               <?php if ($isPaid && $orderPublicId !== '' && !empty($order['invoice_file_path'])): ?>
                 <a href="/invoice/<?= rawurlencode($orderPublicId) ?>" target="_blank" rel="noopener"><i class="fa-regular fa-file-lines" aria-hidden="true"></i> Download Invoice</a>
               <?php elseif ($isPaid): ?>
                 <span class="account-order-action-disabled"><i class="fa-regular fa-file-lines" aria-hidden="true"></i> Invoice will be available soon</span>
-              <?php else: ?>
+              <?php elseif (!$isQuoteOnly): ?>
                 <span class="account-order-action-disabled"><i class="fa-regular fa-file-lines" aria-hidden="true"></i> Invoice after payment</span>
               <?php endif; ?>
             </div>
             </div>
-            <div class="account-order-tracking" aria-label="Tracking detail">
+            <?php if (!$isQuoteOnly): ?><div class="account-order-tracking" aria-label="Tracking detail">
               <div class="account-track-head">
                 <strong>Tracking Detail</strong>
                 <span><?= $h($statusLabels[$status] ?? ucfirst($status)) ?></span>
@@ -268,7 +325,7 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
                   <?php endforeach; ?>
                 </div>
               <?php endif; ?>
-            </div>
+            </div><?php endif; ?>
           </div>
         </details>
       <?php endforeach; ?>
@@ -350,7 +407,7 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
         </section>
       </section>
 
-      <section class="account-tab-panel" data-account-panel="custom-orders"><section class="account-card account-orders-card"><div class="account-section-head"><div><h2>My Custom Orders</h2><p>Approved custom quotes, payment links and updates.</p></div></div><?php if(empty($customOrders)): ?><div class="account-empty-state compact"><strong>No custom orders yet</strong></div><?php else: ?><div class="custom-account-orders"><?php foreach($customOrders as $co): ?><article class="custom-account-order"><div><span class="custom-order-badge"><?= $h(str_replace('_',' ',$co['status'])) ?></span><h3><?= $h($co['request_code']) ?> · <?= $h($co['product_name']) ?></h3><p><?= $h($co['size_dimension']) ?> · <?= $h($co['material_type']) ?> · Qty <?= $h($co['quantity']) ?></p><strong>₹<?= number_format((float)$co['quoted_amount'],2) ?></strong></div><?php if(!empty($co['quote_token']) && in_array($co['status'],['customer_approved','payment_pending'],true)): ?><a class="btn btn-blue btn-sm" href="/custom-cart/<?= rawurlencode($co['quote_token']) ?>">Pay Custom Order</a><?php endif; ?></article><?php endforeach; ?></div><?php endif; ?></section></section>
+      <section class="account-tab-panel" data-account-panel="custom-orders"><section class="account-card account-orders-card"><div class="account-section-head"><div><h2>My Custom Orders</h2><p>Custom quotes, payments, production updates and actions in one place.</p></div></div><?php $renderOrders($customOrderDisplay, false, true); ?></section></section>
       <section class="account-tab-panel" data-account-panel="wishlist" aria-labelledby="wishlistPanelTitle">
         <section class="account-card account-wishlist-card">
           <div class="account-section-head">

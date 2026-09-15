@@ -500,7 +500,7 @@ if ($uri === '/api/payment/create-order' && $method === 'POST') {
     if (!$ensure['ok']) json($ensure, 400);
     $items  = \Cart\Cart::get();
     $customQuoteId=(int)($body['custom_quote_id'] ?? 0); if($customQuoteId)$items=array_values(array_filter($items,static fn($item)=>(int)($item['custom_quote_id']??0)===$customQuoteId));
-    $coupon = $body['coupon_code'] ?? null;
+    $coupon = $customQuoteId > 0 ? null : ($body['coupon_code'] ?? null);
     $totals = \Cart\Cart::totals($items, $coupon);
 
     if ($totals['total'] <= 0) json(['ok' => false, 'msg' => 'Invalid order total']);
@@ -534,7 +534,7 @@ if ($uri === '/api/payment/verify' && $method === 'POST') {
 
     // 1) Place order first (records in DB)
     $placeResult = \Orders\OrderManager::place([
-        'coupon_code'    => $body['coupon_code'] ?? null,
+        'coupon_code'    => (int)($body['custom_quote_id'] ?? 0) > 0 ? null : ($body['coupon_code'] ?? null),
         'payment_method' => 'razorpay',
         'payment_status' => 'pending',
         'billing'        => $body['billing'] ?? null,
