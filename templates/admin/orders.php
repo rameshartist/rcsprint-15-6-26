@@ -95,7 +95,8 @@ $orderStatusCards = [
     ['key'=>'ready_dispatch','label'=>'Dispatched','icon'=>'▰','class'=>'lime','params'=>['status'=>'ready'],'count'=>$statusCounts['ready_dispatch'] ?? 0],
     ['key'=>'delivered','label'=>'Delivered','icon'=>'◆','class'=>'slate','params'=>['status'=>'delivered'],'count'=>$statusCounts['delivered'] ?? 0],
 ];
-$isCardActive = static function (array $card) use ($status, $seen): bool {
+$isCardActive = static function (array $card) use ($status, $seen, $attention): bool {
+    if ($attention) return false;
     return match ($card['key']) {
         'all' => ($status === '' || $status === 'all') && $seen === 'all',
         'new_order' => $status === 'new_order' && $seen !== 'new',
@@ -116,19 +117,18 @@ $isCardActive = static function (array $card) use ($status, $seen): bool {
   <div class="adm-orders-status-grid" aria-label="Order status summary filters">
   <?php foreach ($orderStatusCards as $card): ?>
     <?php
-      $hrefParams = array_merge($baseCardParams, $card['params']);
-      $hrefParams['attention'] = 1;
-      $href = $orderUrl($hrefParams);
+      $href = $orderUrl(array_merge($baseCardParams, $card['params']));
+      $attentionHref = $orderUrl(array_merge($baseCardParams, $card['params'], ['attention'=>1]));
       $active = $isCardActive($card);
+      $showAttentionButton = in_array($card['key'], ['received', 'design_approved'], true);
     ?>
-    <a class="adm-order-status-card adm-order-status-card--<?= htmlspecialchars($card['class']) ?> <?= $active ? 'act' : '' ?>" href="<?= htmlspecialchars($href) ?>">
-      <span class="adm-order-status-icon"><?= htmlspecialchars($card['icon']) ?></span>
-      <span class="adm-order-status-copy">
-        <b><?= number_format((int)$card['count']) ?></b>
-        <strong><?= htmlspecialchars($card['label']) ?></strong>
-      </span>
-      <em class="adm-order-attention-count" aria-label="<?= (int)($attentionCounts[$card['key']] ?? 0) ?> orders need attention"><?= number_format((int)($attentionCounts[$card['key']] ?? 0)) ?></em>
-    </a>
+    <article class="adm-order-status-card adm-order-status-card--<?= htmlspecialchars($card['class']) ?> <?= $active ? 'act' : '' ?>">
+      <a class="adm-order-status-main" href="<?= htmlspecialchars($href) ?>" aria-label="Show all <?= htmlspecialchars($card['label']) ?> orders">
+        <span class="adm-order-status-icon"><?= htmlspecialchars($card['icon']) ?></span>
+        <span class="adm-order-status-copy"><b><?= number_format((int)$card['count']) ?></b><strong><?= htmlspecialchars($card['label']) ?></strong></span>
+      </a>
+      <?php if ($showAttentionButton): ?><a class="adm-order-attention-count" href="<?= htmlspecialchars($attentionHref) ?>" aria-label="Show <?= (int)($attentionCounts[$card['key']] ?? 0) ?> updated <?= htmlspecialchars($card['label']) ?> orders"><?= number_format((int)($attentionCounts[$card['key']] ?? 0)) ?> Updates</a><?php endif; ?>
+    </article>
   <?php endforeach; ?>
 </div>
 </section>

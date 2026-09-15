@@ -14531,4 +14531,5 @@ body.portfolio-lightbox-open { overflow:hidden; }
 .account-order-detail.has-admin-update{border-color:#fca5a5;background:#fee2e2;box-shadow:0 12px 30px rgba(185,28,28,.12)}
 .account-order-detail.has-admin-update>summary,.account-order-detail.has-admin-update>summary:hover{background:#fee2e2}
 .account-order-detail.has-admin-update .account-status{background:#b91c1c;color:#fff;border-color:#991b1b}
+.account-order-tracking .account-track-steps{grid-template-columns:repeat(6,minmax(0,1fr))}
 @media(max-width:700px){.header-login-btn span{max-width:96px}.account-order-detail.has-admin-update{background:#fee2e2}}

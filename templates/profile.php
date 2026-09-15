@@ -181,7 +181,7 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
         $canPayCustom = $custom && $isQuoteOnly && !$isPaid
             && !empty($order['quote_token'])
             && in_array($status, ['customer_approved', 'payment_pending'], true);
-        $trackSteps = ['received', 'design_approved', 'printing', 'other_process', 'ready'];
+        $trackSteps = ['received', 'design_approved', 'printing', 'other_process', 'ready', 'delivered'];
         $trackStatus = $status === 'processing' ? 'other_process' : $status;
         $trackIndex = array_search($trackStatus, $trackSteps, true);
         $trackIndex = $trackIndex === false ? -1 : (int)$trackIndex;
