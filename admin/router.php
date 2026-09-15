@@ -1110,6 +1110,7 @@ if (str_starts_with($uri, '/admin/api/')) {
                 ]
             );
             \Orders\AdminAudit::log('order_shipping_update', 'Order #' . $m[1] . ' shipping updated');
+            \Orders\OrderManager::markAdminUpdate((int)$m[1], 'shipping_updated');
             json(['ok'=>true]);
         } catch (\Throwable $e) {
             json(['ok'=>false,'msg'=>'Shipping columns missing. Apply SQL migration first.'], 500);
@@ -2742,6 +2743,7 @@ if (preg_match('#^/admin/orders/(\d+)/invoice$#', $uri, $m) && $method === 'POST
 
     $admin = \Auth\Auth::admin();
     \Orders\OrderManager::saveUploadedInvoice((int)$order['id'], $relativePath, $originalName, !empty($admin['id']) ? (int)$admin['id'] : null);
+    \Orders\OrderManager::markAdminUpdate((int)$order['id'], 'invoice_uploaded');
     \Orders\AdminAudit::log('invoice_uploaded', 'Invoice uploaded for order ' . (string)$order['order_id']);
     redirect('/admin/orders?success=' . urlencode('Invoice PDF uploaded for order #' . (string)$order['order_id']) . '#ord-' . (int)$order['id']);
 }
@@ -2797,6 +2799,7 @@ if ($uri === '/admin/orders') {
     $status = trim((string)($_GET['status'] ?? 'all'));
     $paymentStatus = trim((string)($_GET['payment_status'] ?? 'all'));
     $seen = trim((string)($_GET['seen'] ?? 'all'));
+    $attention = trim((string)($_GET['attention'] ?? '0')) === '1';
     $sort = trim((string)($_GET['sort'] ?? 'newest'));
     $dateFrom = trim((string)($_GET['date_from'] ?? ''));
     $dateTo = trim((string)($_GET['date_to'] ?? ''));
@@ -2833,6 +2836,15 @@ if ($uri === '/admin/orders') {
     $statusCounts['ready_dispatch'] = (int)($statusCounts['ready'] ?? 0);
     $statusCounts['attention'] = ($statusCounts['received'] ?? 0) + ($statusCounts['whatsapp_pending'] ?? 0) + ($statusCounts['design_approved'] ?? 0) + ($statusCounts['other_process'] ?? 0) + ($statusCounts['printing'] ?? 0);
     $statusCounts['delayed'] = $summaryCounts['delayed_orders'];
+    $attentionPredicate = ($hasSeen ? "(COALESCE(customer_update_pending,0)=1 OR (status='new_order' AND COALESCE(is_seen,0)=0))" : "COALESCE(customer_update_pending,0)=1");
+    $attentionCountRows = Database::rows("SELECT status, COUNT(*) AS c FROM orders WHERE $attentionPredicate GROUP BY status");
+    $attentionCounts = ['all' => 0];
+    foreach ($attentionCountRows as $row) {
+        $attentionCounts[(string)$row['status']] = (int)$row['c'];
+        $attentionCounts['all'] += (int)$row['c'];
+    }
+    $attentionCounts['other_process'] = (int)($attentionCounts['other_process'] ?? 0) + (int)($attentionCounts['processing'] ?? 0);
+    $attentionCounts['ready_dispatch'] = (int)($attentionCounts['ready'] ?? 0);
 
     $where = [];
     $params = [];
@@ -2844,6 +2856,7 @@ if ($uri === '/admin/orders') {
         $where[] = "status IN ('other_process','processing')";
     } elseif ($status !== 'all' && $status !== '') { $where[] = 'status = ?'; $params[] = $status; }
     if ($paymentStatus !== 'all' && $paymentStatus !== '') { $where[] = 'payment_status = ?'; $params[] = $paymentStatus; }
+    if ($attention) $where[] = $attentionPredicate;
     if ($seen === 'new') {
         $where[] = "status = 'new_order'";
     } elseif ($seen === 'seen' && $hasSeen) {
@@ -2917,7 +2930,8 @@ if ($uri === '/admin/orders') {
         unset($item);
     }
 
-    view('admin/orders', compact('orders','total','page','perPage','status','search','summaryCounts','statusCounts','paymentStatus','seen','sort','dateFrom','dateTo','hasSeen'));
+    if ($hasSeen) Database::query("UPDATE orders SET is_seen=1 WHERE status='new_order' AND is_seen=0 AND created_at <= NOW()");
+    view('admin/orders', compact('orders','total','page','perPage','status','search','summaryCounts','statusCounts','attentionCounts','attention','paymentStatus','seen','sort','dateFrom','dateTo','hasSeen'));
     exit;
 }
 

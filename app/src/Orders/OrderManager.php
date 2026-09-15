@@ -173,6 +173,8 @@ class OrderManager
 
     public static function ensureCustomerUpdateSchema(): bool
     {
+        static $ready = false;
+        if ($ready) return true;
         try {
             $hasPending = \Database::row(
                 "SELECT 1 AS ok
@@ -207,7 +209,14 @@ class OrderManager
             if (!$hasAt) {
                 \Database::query("ALTER TABLE orders ADD COLUMN customer_update_at DATETIME NULL AFTER customer_update_type");
             }
+            foreach ([
+                "ALTER TABLE orders ADD COLUMN admin_update_pending TINYINT(1) NOT NULL DEFAULT 0 AFTER customer_update_at",
+                "ALTER TABLE orders ADD COLUMN admin_update_type VARCHAR(80) NULL AFTER admin_update_pending",
+                "ALTER TABLE orders ADD COLUMN admin_update_at DATETIME NULL AFTER admin_update_type",
+            ] as $sql) { try { \Database::query($sql); } catch (\Throwable) {} }
             try { \Database::query("CREATE INDEX idx_orders_customer_update ON orders (customer_update_pending, customer_update_at)"); } catch (\Throwable) {}
+            try { \Database::query("CREATE INDEX idx_orders_admin_update ON orders (admin_update_pending, admin_update_at)"); } catch (\Throwable) {}
+            $ready = true;
             return true;
         } catch (\Throwable $e) {
             error_log('Order customer update schema unavailable: ' . $e->getMessage());
@@ -289,6 +298,18 @@ class OrderManager
               WHERE id = ?",
             [$orderId]
         );
+    }
+
+    public static function markAdminUpdate(int $orderId, string $type): void
+    {
+        if ($orderId <= 0 || !self::ensureCustomerUpdateSchema()) return;
+        \Database::query("UPDATE orders SET admin_update_pending=1, admin_update_type=?, admin_update_at=NOW(), updated_at=NOW() WHERE id=?", [substr($type, 0, 80), $orderId]);
+    }
+
+    public static function clearAdminUpdate(int $orderId): void
+    {
+        if ($orderId <= 0 || !self::ensureCustomerUpdateSchema()) return;
+        \Database::query("UPDATE orders SET admin_update_pending=0, admin_update_type=NULL, admin_update_at=NULL, updated_at=NOW() WHERE id=?", [$orderId]);
     }
 
     public static function recordDesignEvent(array $event): bool
@@ -542,6 +563,7 @@ class OrderManager
         );
         if ($actor !== 'system') {
             self::clearCustomerUpdate($orderId);
+            self::markAdminUpdate($orderId, 'order_status_updated');
         }
 
         \Database::insert(
@@ -653,6 +675,10 @@ class OrderManager
         ]);
         if ($admin) {
             self::clearCustomerUpdate((int)$approval['order_id']);
+            if (in_array($status, ['issue_found', 'proof_uploaded', 'approved'], true)) {
+                $updateType = match ($status) { 'proof_uploaded' => 'admin_proof_uploaded', 'issue_found' => 'admin_issue_marked', default => 'admin_design_approved' };
+                self::markAdminUpdate((int)$approval['order_id'], $updateType);
+            }
         }
 
         self::syncOrderDesignApproved((int)$approval['order_id']);
@@ -702,6 +728,7 @@ class OrderManager
                 'note' => $note,
             ]);
             self::markCustomerUpdate((int)$approval['order_id'], 'customer_design_approved');
+            self::clearAdminUpdate((int)$approval['order_id']);
             self::syncOrderDesignApproved((int)$approval['order_id']);
             return ['ok' => true, 'msg' => 'Design approved successfully.'];
         }
@@ -731,6 +758,7 @@ class OrderManager
                 'note' => $note,
             ]);
             self::markCustomerUpdate((int)$approval['order_id'], 'customer_revision_requested');
+            self::clearAdminUpdate((int)$approval['order_id']);
             return ['ok' => true, 'msg' => 'Revision request sent to admin.'];
         }
 

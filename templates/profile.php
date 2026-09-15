@@ -166,6 +166,16 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
         $productTitle = implode(', ', array_filter(array_map(static fn($item) => (string)($item['product_name'] ?? ''), $items)));
         $orderPublicId = (string)($order['order_id'] ?? $order['id'] ?? '');
         $isPaid = in_array((string)($order['payment_status'] ?? ''), ['paid'], true);
+        $hasAdminUpdate = !empty($order['admin_update_pending']);
+        $adminUpdateLabel = match ((string)($order['admin_update_type'] ?? '')) {
+            'admin_proof_uploaded' => 'Proof Ready — Your Approval Required',
+            'admin_issue_marked' => 'Artwork Action Required',
+            'admin_design_approved' => 'Design Approved',
+            'order_status_updated' => 'Order Status Updated',
+            'invoice_uploaded' => 'Invoice Available',
+            'shipping_updated' => 'Shipping Details Updated',
+            default => 'New Order Update',
+        };
         $isQuoteOnly = !empty($order['is_quote_only']);
         $customRequest = is_array($order['custom_request'] ?? null) ? $order['custom_request'] : [];
         $canPayCustom = $custom && $isQuoteOnly && !$isPaid
@@ -178,13 +188,13 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
         $isCancelled = $status === 'cancelled';
         $isWhatsappPending = $status === 'whatsapp_pending';
       ?>
-        <details id="account-order-<?= $h(preg_replace('/[^A-Za-z0-9_-]+/', '-', $orderPublicId)) ?>" class="account-order-detail" data-order-detail="<?= $h($orderPublicId) ?>">
+        <details id="account-order-<?= $h(preg_replace('/[^A-Za-z0-9_-]+/', '-', $orderPublicId)) ?>" class="account-order-detail <?= $hasAdminUpdate ? 'has-admin-update' : '' ?>" data-order-detail="<?= $h($orderPublicId) ?>" data-order-db-id="<?= (int)($order['id'] ?? 0) ?>" data-admin-update-type="<?= $h($order['admin_update_type'] ?? '') ?>">
           <summary class="account-order-row" role="row">
             <strong>#<?= $h($order['order_id'] ?? $order['id'] ?? '') ?></strong>
             <span><?= !empty($order['created_at']) ? date('d M, Y', strtotime((string)$order['created_at'])) : '—' ?></span>
             <span class="account-product-count" title="<?= $h($productTitle) ?>"><?= count($items) ?> item<?= count($items) === 1 ? '' : 's' ?></span>
             <b>₹<?= number_format((float)($order['total_amount'] ?? 0)) ?></b>
-            <span class="account-status status-<?= $h($statusClass) ?>"><?= $h($statusLabels[$status] ?? ucfirst($status)) ?></span>
+            <span class="account-status status-<?= $h($statusClass) ?>"><?= $h($hasAdminUpdate ? $adminUpdateLabel : ($statusLabels[$status] ?? ucfirst($status))) ?></span>
             <span class="account-mini-btn">Actions <i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span>
           </summary>
           <div class="account-order-expanded">
@@ -735,6 +745,18 @@ document.querySelectorAll('[data-account-tab]').forEach(el => {
     if (!tab) return;
     event.preventDefault();
     setAccountTab(tab);
+  });
+});
+
+document.querySelectorAll('.account-order-detail.has-admin-update').forEach(card => {
+  card.addEventListener('toggle', async () => {
+    if (!card.open || card.dataset.updateAcknowledged === '1') return;
+    if (!['order_status_updated','admin_design_approved','invoice_uploaded','shipping_updated'].includes(card.dataset.adminUpdateType || '')) return;
+    const id = Number(card.dataset.orderDbId || 0);
+    if (!id) return;
+    card.dataset.updateAcknowledged = '1';
+    const resp = await fetch(`/api/orders/${id}/admin-update/ack`, {method:'POST', headers:{'X-CSRF-TOKEN':'<?= $h($csrf ?? '') ?>'}, credentials:'same-origin'});
+    if (resp.ok) card.classList.remove('has-admin-update');
   });
 });
 

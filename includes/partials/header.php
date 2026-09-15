@@ -147,14 +147,14 @@ foreach ($navProducts as $p) {
           <li><a href="/portfolio" class="nav-link rcs-nav-link <?= $currentUri === '/portfolio' ? 'active' : '' ?>" data-design-target="header.nav_links">Portfolio</a></li>
           <li><a href="/blogs" class="nav-link rcs-nav-link <?= $currentUri === '/blogs' ? 'active' : '' ?>" data-design-target="header.nav_links">Blog</a></li>
           <li><a href="/contact" class="nav-link rcs-nav-link <?= $currentUri === '/contact' ? 'active' : '' ?>" data-design-target="header.nav_links">Contact</a></li>
-          <li><a href="<?= ($user ?? null) ? '/profile' : '/login' ?>" class="nav-link rcs-nav-link <?= in_array($currentUri, ['/profile','/login'], true) ? 'active' : '' ?>" data-design-target="header.nav_links">My Account</a></li>
+          <li><a href="<?= ($user ?? null) ? '/profile' : '/login' ?>" class="nav-link rcs-nav-link <?= in_array($currentUri, ['/profile','/login'], true) ? 'active' : '' ?>" data-design-target="header.nav_links"><?= htmlspecialchars(($user ?? null) ? (string)($user['name'] ?? 'My Account') : 'My Account') ?></a></li>
         </ul>
       </div>
 
       <div class="navbar-actions rcs-navbar-actions header-cta-actions">
         <button class="header-cta-btn header-quote-btn" type="button" onclick="openCustomQuoteModal()"><i class="fa-solid fa-calculator" aria-hidden="true"></i><span>Get Custom Quote</span></button>
         <a href="<?= ($user ?? null) ? '/profile#wishlist' : '/login?redirect=/profile%23wishlist' ?>" class="header-cta-btn header-fav-btn"><i class="fa-regular fa-heart" aria-hidden="true"></i><span>My Favorites</span></a>
-        <a href="<?= ($user ?? null) ? '/profile' : '/login' ?>" class="header-cta-btn header-login-btn"><i class="fa-regular fa-user" aria-hidden="true"></i><span><?= ($user ?? null) ? 'My Account' : 'Login / Signup' ?></span></a>
+        <a href="<?= ($user ?? null) ? '/profile' : '/login' ?>" class="header-cta-btn header-login-btn" title="<?= htmlspecialchars(($user ?? null) ? (string)($user['name'] ?? 'My Account') : 'My Account') ?>"><i class="fa-regular fa-user" aria-hidden="true"></i><span><?= htmlspecialchars(($user ?? null) ? (string)($user['name'] ?? 'My Account') : 'My Account') ?></span></a>
         <a href="/cart" class="action-btn cart-btn rcs-action-btn rcs-cart-btn" aria-label="Cart">
           <i class="fa-solid fa-cart-shopping"></i>
           <span class="cart-badge rcs-cart-badge" id="cartCount">0</span>
@@ -219,7 +219,7 @@ foreach ($navProducts as $p) {
     <a href="/contact" class="md-item" onclick="closeDrawer()">📞 Contact</a>
     <button class="md-item md-action md-quote-action" type="button" onclick="openCustomQuoteModal();closeDrawer()">🧾 Get Custom Quote</button>
     <a href="<?= ($user ?? null) ? '/profile#wishlist' : '/login?redirect=/profile%23wishlist' ?>" class="md-item" onclick="closeDrawer()">♡ My Favorites</a>
-    <a href="<?= ($user ?? null) ? '/profile' : '/login' ?>" class="md-item" onclick="closeDrawer()">👤 <?= ($user ?? null) ? 'My Account' : 'Login / Signup' ?></a>
+    <a href="<?= ($user ?? null) ? '/profile' : '/login' ?>" class="md-item" onclick="closeDrawer()">👤 <?= htmlspecialchars(($user ?? null) ? (string)($user['name'] ?? 'My Account') : 'My Account') ?></a>
     <a href="/cart" class="md-item md-action" onclick="closeDrawer()">
       🛒 Cart <span class="md-cart-badge">0</span>
     </a>

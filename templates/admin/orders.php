@@ -8,6 +8,9 @@ $statusLabels = ['new_order'=>'New Order','received'=>'Received','design_approve
 $designApprovalLabels = ['pending_review'=>'Pending Review','issue_found'=>'Issue Found','proof_uploaded'=>'Proof Sent','revision_requested'=>'Revision Requested','approved'=>'Approved'];
 $designApprovalColors = ['pending_review'=>'b-amber','issue_found'=>'b-red','proof_uploaded'=>'b-blue','revision_requested'=>'b-red','approved'=>'b-green'];
 $adminWhatsAppIcon = '<svg class="wa-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.04 2C6.58 2 2.14 6.39 2.14 11.79c0 1.72.46 3.4 1.33 4.88L2 22l5.48-1.43a10.08 10.08 0 0 0 4.56 1.1h.01c5.46 0 9.9-4.39 9.9-9.79S17.5 2 12.04 2Zm0 17.98h-.01a8.35 8.35 0 0 1-4.25-1.16l-.3-.18-3.25.85.87-3.13-.2-.32a8.03 8.03 0 0 1-1.26-4.25c0-4.47 3.77-8.1 8.4-8.1 4.62 0 8.39 3.63 8.39 8.1s-3.77 8.19-8.39 8.19Zm4.6-6.12c-.25-.12-1.48-.72-1.71-.8-.23-.09-.4-.13-.56.12-.17.25-.65.8-.79.96-.15.17-.3.19-.55.07-.25-.13-1.05-.38-2-1.22-.74-.65-1.24-1.46-1.39-1.71-.14-.25-.01-.38.11-.51.12-.11.25-.3.38-.44.13-.15.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.12-.56-1.34-.77-1.84-.2-.48-.41-.41-.56-.42h-.48c-.17 0-.44.06-.67.31-.23.25-.88.85-.88 2.07 0 1.22.9 2.4 1.02 2.56.13.17 1.76 2.66 4.27 3.73.6.26 1.06.41 1.42.52.6.19 1.15.16 1.58.1.48-.07 1.48-.6 1.69-1.18.21-.58.21-1.08.15-1.18-.06-.11-.23-.17-.48-.29Z"/></svg>';
+$publicScheme = strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https' || !empty($_SERVER['HTTPS']) ? 'https' : 'http';
+$publicHost = preg_replace('/[^A-Za-z0-9.:-]/', '', (string)($_SERVER['HTTP_HOST'] ?? ''));
+$publicBase = $publicHost !== '' ? ($publicScheme . '://' . $publicHost) : rtrim((defined('APP_URL') ? (string)APP_URL : ''), '/');
 $waTemplateDefaults = [
     'order_confirmation' => "Hello {customer_name}, 👋\n\nThank you for your order. We have received Order #{order_id}.\n\nOrder value: {order_total}\nProducts:\n{products}\n\nOur team will review the details and start processing your order shortly.\n\nYou can login to your account to check order details, current status, design approval status and future updates here:\n{account_order_url}\n\nThank you,\n{business_name}\nFor any query, call or WhatsApp: {business_phone}",
     'proof_ready' => "Hello {customer_name}, 👋\n\nYour corrected design proof for Order #{order_id} is ready for review.\n\nProduct:\n{products}\n\nPlease login to your account and check My Orders to view the proof. You can approve the design or request a revision here:\n{account_order_url}\n\nThank you,\n{business_name}\nFor any query, call or WhatsApp: {business_phone}",
@@ -45,6 +48,8 @@ $search = $search ?? '';
 $status = $status ?? 'all';
 $paymentStatus = $paymentStatus ?? 'all';
 $seen = $seen ?? 'all';
+$attention = !empty($attention);
+$attentionCounts = $attentionCounts ?? ['all' => 0];
 $sort = $sort ?? 'newest';
 $dateFrom = $dateFrom ?? '';
 $dateTo = $dateTo ?? '';
@@ -112,6 +117,7 @@ $isCardActive = static function (array $card) use ($status, $seen): bool {
   <?php foreach ($orderStatusCards as $card): ?>
     <?php
       $hrefParams = array_merge($baseCardParams, $card['params']);
+      $hrefParams['attention'] = 1;
       $href = $orderUrl($hrefParams);
       $active = $isCardActive($card);
     ?>
@@ -121,7 +127,7 @@ $isCardActive = static function (array $card) use ($status, $seen): bool {
         <b><?= number_format((int)$card['count']) ?></b>
         <strong><?= htmlspecialchars($card['label']) ?></strong>
       </span>
-      <em><?= $active ? 'Showing' : 'View' ?> →</em>
+      <em class="adm-order-attention-count" aria-label="<?= (int)($attentionCounts[$card['key']] ?? 0) ?> orders need attention"><?= number_format((int)($attentionCounts[$card['key']] ?? 0)) ?></em>
     </a>
   <?php endforeach; ?>
 </div>
@@ -130,6 +136,7 @@ $isCardActive = static function (array $card) use ($status, $seen): bool {
 <details class="adm-orders-control-panel adm-filter-panel" open>
   <summary class="adm-filter-summary"><span><i class="fa-solid fa-filter" aria-hidden="true"></i> Filter Orders</span><em>Search, status, payment & dates</em><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
 <form method="GET" class="adm-orders-filters">
+  <?php if ($attention): ?><input type="hidden" name="attention" value="1"><?php endif; ?>
   <input name="search" class="fi" placeholder="Search order ID, name, phone…" value="<?= htmlspecialchars($search) ?>">
   <select name="status" class="fi fi-sel" onchange="this.form.submit()">
     <option value="all" <?= $status === 'all' ? 'selected' : '' ?>>All Statuses</option>
@@ -153,7 +160,7 @@ $isCardActive = static function (array $card) use ($status, $seen): bool {
     <option value="urgent" <?= $sort === 'urgent' ? 'selected' : '' ?>>Urgent first</option>
   </select>
   <button class="btn btn-blue btn-sm" type="submit">Apply</button>
-  <?php if ($search || $status !== 'all' || $paymentStatus !== 'all' || $seen !== 'all' || $sort !== 'newest' || $dateFrom || $dateTo): ?><a href="/admin/orders" class="btn btn-outline btn-sm">Clear</a><?php endif; ?>
+  <?php if ($search || $status !== 'all' || $paymentStatus !== 'all' || $seen !== 'all' || $attention || $sort !== 'newest' || $dateFrom || $dateTo): ?><a href="/admin/orders" class="btn btn-outline btn-sm">Clear</a><?php endif; ?>
 </form>
 </details>
 <?php if ($flashSuccess !== '' || $flashError !== ''): ?>
@@ -182,10 +189,6 @@ $isCardActive = static function (array $card) use ($status, $seen): bool {
         default => 'Customer Update',
     };
     $hasDesignAttention = false;
-    foreach (($o['items'] ?? []) as $attentionItem) {
-        $attentionStatus = (string)($attentionItem['design_approval_status'] ?? '');
-        if ($attentionStatus !== '' && $attentionStatus !== 'approved') { $hasDesignAttention = true; break; }
-    }
     $ageSeconds = max(0, time() - $createdTs);
     $orderAge = $ageSeconds >= 86400 ? floor($ageSeconds / 86400) . 'd old' : floor($ageSeconds / 3600) . 'h old';
     $cardClasses = ['adm-order-card', 'adm-order-card--' . preg_replace('/[^a-z0-9_-]+/i', '-', $orderStatus)];
@@ -260,7 +263,7 @@ $isCardActive = static function (array $card) use ($status, $seen): bool {
                       </a>
                     <?php
                       $proofOrderId = (string)($o['order_id'] ?? $o['id'] ?? '');
-                      $proofProfileUrl = rtrim((defined('APP_URL') ? (string)APP_URL : ''), '/') . '/profile#orders-' . rawurlencode($proofOrderId);
+                      $proofProfileUrl = $publicBase . '/profile#orders-' . rawurlencode($proofOrderId);
                     ?>
                       <span class="ord-artwork-actions"><a href="/admin/artwork/<?= (int)$item['design_proof_file_id'] ?>/view" class="ord-artwork-link ord-artwork-link--view" target="_blank" rel="noopener">View</a><a href="/admin/artwork/<?= (int)$item['design_proof_file_id'] ?>/download" class="ord-artwork-link ord-artwork-link--primary">Download</a><button class="ord-artwork-link ord-artwork-link--wa" type="button" onclick='waProofReady(<?= json_encode((string)($o['customer_name'] ?? 'Customer'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode((string)($o['customer_phone'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($proofOrderId, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($proofProfileUrl, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' aria-label="Send proof-ready WhatsApp" title="Send proof-ready WhatsApp"><?= $adminWhatsAppIcon ?></button></span>
                     </span>
@@ -274,7 +277,7 @@ $isCardActive = static function (array $card) use ($status, $seen): bool {
                   <button class="aoc-btn" type="button" onclick="chooseDesignProof(<?= $approvalId ?>)">Upload Proof</button>
                   <button class="aoc-btn aoc-btn--danger" type="button" onclick="setDesignApproval(<?= $approvalId ?>,'issue_found')">Mark Issue</button>
                   <button class="aoc-btn aoc-btn--approve" type="button" onclick="setDesignApproval(<?= $approvalId ?>,'approved')">Approve Design</button>
-                  <button class="aoc-btn aoc-btn--approve-wa" type="button" onclick='waDesignApproved(<?= json_encode((string)($o['customer_name'] ?? 'Customer'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode((string)($o['customer_phone'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode((string)($o['order_id'] ?? $o['id'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode((string)($item['product_name'] ?? 'Product'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode(number_format((float)($item['quantity'] ?? 0)) . ' qty', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode(rtrim((defined('APP_URL') ? (string)APP_URL : ''), '/') . '/profile#orders-' . rawurlencode((string)($o['order_id'] ?? $o['id'] ?? '')), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Send design approved WhatsApp" aria-label="Send design approved WhatsApp"><span class="aoc-ico"><?= $adminWhatsAppIcon ?></span><span>WhatsApp</span></button>
+                  <button class="aoc-btn aoc-btn--approve-wa" type="button" onclick='waDesignApproved(<?= json_encode((string)($o['customer_name'] ?? 'Customer'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode((string)($o['customer_phone'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode((string)($o['order_id'] ?? $o['id'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode((string)($item['product_name'] ?? 'Product'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode(number_format((float)($item['quantity'] ?? 0)) . ' qty', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($publicBase . '/profile#orders-' . rawurlencode((string)($o['order_id'] ?? $o['id'] ?? '')), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Send design approved WhatsApp" aria-label="Send design approved WhatsApp"><span class="aoc-ico"><?= $adminWhatsAppIcon ?></span><span>WhatsApp</span></button>
                 </div>
                 <?php endif; ?>
               </div>
@@ -296,7 +299,7 @@ $isCardActive = static function (array $card) use ($status, $seen): bool {
           <div class="ord-actions ord-actions--compact">
             <?php
               $orderConfirmId = (string)($o['order_id'] ?? $o['id'] ?? '');
-              $orderConfirmProfileUrl = rtrim((defined('APP_URL') ? (string)APP_URL : ''), '/') . '/profile#orders-' . rawurlencode($orderConfirmId);
+              $orderConfirmProfileUrl = $publicBase . '/profile#orders-' . rawurlencode($orderConfirmId);
               $orderConfirmTotal = '₹' . number_format((float)($o['total_amount'] ?? 0));
               $orderConfirmProductLines = [];
               foreach (array_slice(($o['items'] ?? []), 0, 4) as $confirmItem) {
@@ -362,7 +365,7 @@ $isCardActive = static function (array $card) use ($status, $seen): bool {
 <?php if ($total > $perPage): ?>
 <div style="display:flex;gap:8px;justify-content:center;margin-top:20px;flex-wrap:wrap">
   <?php for ($i = 1; $i <= ceil($total / $perPage); $i++): ?>
-  <?php $pageHref = $orderUrl(['page'=>$i,'status'=>$status,'search'=>$search,'payment_status'=>$paymentStatus,'seen'=>$seen,'sort'=>$sort,'date_from'=>$dateFrom,'date_to'=>$dateTo]); ?>
+  <?php $pageHref = $orderUrl(['page'=>$i,'status'=>$status,'search'=>$search,'payment_status'=>$paymentStatus,'seen'=>$seen,'attention'=>$attention ? 1 : null,'sort'=>$sort,'date_from'=>$dateFrom,'date_to'=>$dateTo]); ?>
   <a href="<?= htmlspecialchars($pageHref) ?>" class="btn <?= $page === $i ? 'btn-blue' : 'btn-outline' ?> btn-sm"><?= $i ?></a>
   <?php endfor; ?>
 </div>

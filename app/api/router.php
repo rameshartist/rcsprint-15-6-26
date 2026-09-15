@@ -174,6 +174,7 @@ if (preg_match('#^/api/design-approvals/(\d+)/artwork$#', $uri, $m) && $method =
         'note' => $canInitialUpload ? 'Customer uploaded artwork after selecting upload later.' : 'Customer reuploaded artwork.',
     ]);
     \Orders\OrderManager::markCustomerUpdate((int)$approval['order_id'], $canInitialUpload ? 'customer_artwork_uploaded' : 'customer_artwork_reuploaded');
+    \Orders\OrderManager::clearAdminUpdate((int)$approval['order_id']);
     \Orders\OrderManager::syncOrderDesignApproved((int)$approval['order_id']);
     json([
         'ok' => true,
@@ -189,6 +190,15 @@ if (preg_match('#^/api/design-approvals/(\d+)/artwork$#', $uri, $m) && $method =
             'download_url' => '/account/artwork/' . (int)$fileId . '/download',
         ],
     ]);
+}
+
+if (preg_match('#^/api/orders/(\d+)/admin-update/ack$#', $uri, $m) && $method === 'POST') {
+    \Auth\Auth::require();
+    $user = \Auth\Auth::user();
+    $order = Database::row("SELECT id, admin_update_type FROM orders WHERE id=? AND user_id=? LIMIT 1", [(int)$m[1], (int)$user['id']]);
+    if (!$order) json(['ok' => false, 'msg' => 'Order not found.'], 404);
+    if (in_array((string)($order['admin_update_type'] ?? ''), ['order_status_updated', 'admin_design_approved', 'invoice_uploaded', 'shipping_updated'], true)) \Orders\OrderManager::clearAdminUpdate((int)$order['id']);
+    json(['ok' => true]);
 }
 
 

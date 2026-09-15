@@ -14526,3 +14526,9 @@ body.portfolio-lightbox-open { overflow:hidden; }
 /* Quote-only custom order rows reuse the account order language without empty file columns. */
 .account-order-item-card.is-quote-only{grid-template-columns:72px minmax(0,1fr)}
 @media(max-width:700px){.account-order-item-card.is-quote-only{grid-template-columns:58px minmax(0,1fr)}}
+
+.header-login-btn span,.rcs-nav-menu>li:last-child .rcs-nav-link{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.account-order-detail.has-admin-update{border-color:#fca5a5;background:#fee2e2;box-shadow:0 12px 30px rgba(185,28,28,.12)}
+.account-order-detail.has-admin-update>summary,.account-order-detail.has-admin-update>summary:hover{background:#fee2e2}
+.account-order-detail.has-admin-update .account-status{background:#b91c1c;color:#fff;border-color:#991b1b}
+@media(max-width:700px){.header-login-btn span{max-width:96px}.account-order-detail.has-admin-update{background:#fee2e2}}
