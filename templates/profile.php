@@ -21,6 +21,7 @@ $shipping = $profile['shipping'] ?? [];
 $orders = is_array($orders ?? null) ? $orders : [];
 $customOrders = is_array($customOrders ?? null) ? $customOrders : [];
 $customFulfillmentOrders = is_array($customFulfillmentOrders ?? null) ? $customFulfillmentOrders : [];
+$savedAddresses = is_array($savedAddresses ?? null) ? $savedAddresses : [];
 $reviewableItems = is_array($reviewableItems ?? null) ? $reviewableItems : [];
 $myReviews = is_array($myReviews ?? null) ? $myReviews : [];
 $wishlistItems = is_array($wishlistItems ?? null) ? $wishlistItems : [];
@@ -38,7 +39,7 @@ $locationParts = array_filter([$city, $state, $pincode]);
 $location = $locationParts ? implode(', ', $locationParts) : 'Add your default address';
 $initials = strtoupper(substr(trim($name), 0, 1) ?: 'R');
 $hasSavedAddress = trim((string)($shipping['address_line1'] ?? '')) !== '' || trim((string)($billing['address_line1'] ?? '')) !== '';
-$savedAddressCount = $hasSavedAddress ? 1 : 0;
+$savedAddressCount = count($savedAddresses) ?: ($hasSavedAddress ? 1 : 0);
 
 $statusLabels = [
     'new_order' => 'New Order',
@@ -187,6 +188,7 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
         $trackIndex = $trackIndex === false ? -1 : (int)$trackIndex;
         $isCancelled = $status === 'cancelled';
         $isWhatsappPending = $status === 'whatsapp_pending';
+        $canCancel = in_array($status, ['new_order','received','whatsapp_pending','design_approved'], true) && !$isQuoteOnly;
       ?>
         <details id="account-order-<?= $h(preg_replace('/[^A-Za-z0-9_-]+/', '-', $orderPublicId)) ?>" class="account-order-detail <?= $hasAdminUpdate ? 'has-admin-update' : '' ?>" data-order-detail="<?= $h($orderPublicId) ?>" data-order-db-id="<?= (int)($order['id'] ?? 0) ?>" data-admin-update-type="<?= $h($order['admin_update_type'] ?? '') ?>">
           <summary class="account-order-row" role="row">
@@ -336,6 +338,7 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
                 </div>
               <?php endif; ?>
             </div><?php endif; ?>
+            <?php if ($canCancel): ?><div class="account-order-cancel-row"><button type="button" class="account-order-cancel-btn" onclick="cancelAccountOrder(<?= (int)($order['id'] ?? 0) ?>, this)"><i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel Order</button></div><?php endif; ?>
           </div>
         </details>
       <?php endforeach; ?>
@@ -599,7 +602,9 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
 
       <section class="account-tab-panel" data-account-panel="addresses" aria-labelledby="addressesPanelTitle">
         <section class="account-card account-form-card">
-          <div class="account-section-head"><div><h2 id="addressesPanelTitle">Saved Addresses</h2><p>Manage default delivery and billing addresses used during checkout.</p></div></div>
+          <div class="account-section-head"><div><h2 id="addressesPanelTitle">Saved Addresses</h2><p>Manage delivery and billing addresses used during checkout.</p></div><button class="btn btn-blue btn-sm" type="button" onclick="toggleNewAddressForm(true)">＋ Add Address</button></div>
+          <?php if ($savedAddresses): ?><div class="account-saved-address-grid" id="savedAddressGrid"><?php foreach($savedAddresses as $address): ?><article class="account-saved-address"><div><strong><?= $h($address['label']) ?><?= !empty($address['is_default'])?' · Default':'' ?></strong><p><?= $h($address['business_name']) ?><br><?= $h($address['address_line1']) ?> <?= $h($address['address_line2']) ?><br><?= $h($address['city']) ?>, <?= $h($address['state']) ?> <?= $h($address['pincode']) ?></p></div><button type="button" onclick="deleteSavedAddress(<?= (int)$address['id'] ?>,this)">Delete</button></article><?php endforeach; ?></div><?php endif; ?>
+          <div class="account-form-block account-new-address" id="newAddressForm" hidden><h3>Add New Address</h3><div class="f2"><div class="fg"><label>Label</label><input id="pa-label" class="fi" placeholder="Home / Office"></div><div class="fg"><label>Business / Recipient</label><input id="pa-business" class="fi"></div></div><div class="fg"><label>Address Line 1 *</label><input id="pa-add1" class="fi"></div><div class="fg"><label>Address Line 2</label><input id="pa-add2" class="fi"></div><div class="f2"><div class="fg"><label>City *</label><input id="pa-city" class="fi"></div><div class="fg"><label>State *</label><input id="pa-state" class="fi"></div></div><div class="fg"><label>Pincode *</label><input id="pa-pin" class="fi"></div><label class="account-same-address"><input id="pa-default" type="checkbox"><span>Set as default</span></label><div class="account-form-actions"><button class="btn btn-blue" type="button" onclick="addSavedAddress()">Save New Address</button><button class="btn btn-outline" type="button" onclick="toggleNewAddressForm(false)">Cancel</button></div></div>
           <div class="account-form-block">
             <h3><i class="fa-solid fa-location-dot"></i> Default Delivery Address</h3>
             <div class="fg"><label>Address Line 1</label><input id="ps-add1" class="fi" value="<?= $h($shipping['address_line1'] ?? '') ?>"></div>
@@ -1277,6 +1282,23 @@ async function saveProfile() {
     target.style.display = 'block';
   }
 }
+
+async function cancelAccountOrder(id, btn) {
+  if (!id || !confirm('Cancel this order? This is allowed only before printing starts.')) return;
+  const reason = prompt('Optional cancellation reason:', '') ?? '';
+  btn.disabled = true;
+  const resp = await fetch(`/api/orders/${id}/cancel`, {method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin',body:JSON.stringify({reason})});
+  const data = await resp.json().catch(()=>({ok:false,msg:'Could not cancel order.'}));
+  if (!data.ok) { alert(data.msg || 'Could not cancel order.'); btn.disabled=false; return; }
+  alert(data.msg || 'Order cancelled.'); location.reload();
+}
+
+function toggleNewAddressForm(show){const form=document.getElementById('newAddressForm');if(form)form.hidden=!show;}
+async function addSavedAddress(){
+  const payload={label:document.getElementById('pa-label').value,business_name:document.getElementById('pa-business').value,address_line1:document.getElementById('pa-add1').value,address_line2:document.getElementById('pa-add2').value,city:document.getElementById('pa-city').value,state:document.getElementById('pa-state').value,pincode:document.getElementById('pa-pin').value,is_default:document.getElementById('pa-default').checked};
+  const resp=await fetch('/api/profile/addresses',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin',body:JSON.stringify(payload)});const data=await resp.json();if(!data.ok){alert(data.msg||'Could not save address.');return;}location.reload();
+}
+async function deleteSavedAddress(id,btn){if(!confirm('Delete this saved address?'))return;btn.disabled=true;const resp=await fetch(`/api/profile/addresses/${id}`,{method:'DELETE',headers:{'X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin'});if(resp.ok)location.reload();else btn.disabled=false;}
 
 async function changePassword() {
   const err = document.getElementById('pwErr');

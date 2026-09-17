@@ -145,6 +145,10 @@ $ensureCustomQuoteSchema = static function (): void {
             sent_at DATETIME NULL,
             payment_link_generated_at DATETIME NULL,
             approved_at DATETIME NULL,
+            is_seen TINYINT(1) NOT NULL DEFAULT 0,
+            customer_update_pending TINYINT(1) NOT NULL DEFAULT 0,
+            customer_update_type VARCHAR(80) NULL,
+            customer_update_at DATETIME NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
             KEY idx_custom_quote_status (status, created_at),
@@ -163,6 +167,10 @@ $ensureCustomQuoteSchema = static function (): void {
             "ALTER TABLE custom_quote_requests ADD COLUMN sent_at DATETIME NULL AFTER payment_status",
             "ALTER TABLE custom_quote_requests ADD COLUMN payment_link_generated_at DATETIME NULL AFTER sent_at",
             "ALTER TABLE custom_quote_requests ADD COLUMN approved_at DATETIME NULL AFTER payment_link_generated_at",
+            "ALTER TABLE custom_quote_requests ADD COLUMN is_seen TINYINT(1) NOT NULL DEFAULT 0 AFTER approved_at",
+            "ALTER TABLE custom_quote_requests ADD COLUMN customer_update_pending TINYINT(1) NOT NULL DEFAULT 0 AFTER is_seen",
+            "ALTER TABLE custom_quote_requests ADD COLUMN customer_update_type VARCHAR(80) NULL AFTER customer_update_pending",
+            "ALTER TABLE custom_quote_requests ADD COLUMN customer_update_at DATETIME NULL AFTER customer_update_type",
         ] as $sql) { try { Database::query($sql); } catch (\Throwable) {} }
         try { Database::query("ALTER TABLE custom_quote_requests DROP COLUMN estimated_delivery"); } catch (\Throwable) {}
         try {
@@ -1878,6 +1886,22 @@ if (str_starts_with($uri, '/admin/api/')) {
 
 
 
+    if ($uri === '/admin/api/custom-orders' && $method === 'POST') {
+        $name = trim((string)($body['customer_name'] ?? ''));
+        $phone = trim((string)($body['phone'] ?? ''));
+        $product = trim((string)($body['product_name'] ?? ''));
+        if ($name === '' || $phone === '' || $product === '') json(['ok'=>false,'msg'=>'Customer name, WhatsApp number and product are required.'], 422);
+        $email=trim((string)($body['email'] ?? ''));
+        $matched=$email!==''?Database::row("SELECT id FROM users WHERE is_active=1 AND (email=? OR phone=?) LIMIT 1",[$email,$phone]):Database::row("SELECT id FROM users WHERE is_active=1 AND phone=? LIMIT 1",[$phone]);
+        $userId=(int)($matched['id']??0); $pendingCode='CQ-PENDING-'.strtoupper(bin2hex(random_bytes(8))); $token=bin2hex(random_bytes(24));
+        $id = Database::insert("INSERT INTO custom_quote_requests (request_code,user_id,customer_name,phone,email,product_name,size_dimension,material_type,quantity,instructions,status,customer_type,quote_token,source_page,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,'new',?,?, 'admin',NOW())", [
+            $pendingCode,$userId?:null,$name,$phone,$email?:null,$product,trim((string)($body['size_dimension'] ?? '')),trim((string)($body['material_type'] ?? '')),trim((string)($body['quantity'] ?? '')),trim((string)($body['instructions'] ?? '')),$userId?'registered':'guest',$token
+        ]);
+        $code = 'CQ-' . str_pad((string)$id, 4, '0', STR_PAD_LEFT);
+        Database::query("UPDATE custom_quote_requests SET request_code=? WHERE id=?", [$code,(int)$id]);
+        json(['ok'=>true,'id'=>(int)$id,'request_code'=>$code]);
+    }
+
     if ($uri === '/admin/api/custom-orders' && $method === 'GET') {
         try {
             $rows = Database::rows("SELECT cqr.*, u.name AS user_name, u.email AS user_email, u.phone AS user_phone
@@ -1891,7 +1915,9 @@ if (str_starts_with($uri, '/admin/api/')) {
                 if ($st === 'paid') $st = 'converted_to_order';
                 if (array_key_exists($st, $counts)) $counts[$st]++;
             }
-            json(['ok'=>true,'quotes'=>$rows,'counts'=>$counts]);
+            $unseen = (int)(Database::row("SELECT COUNT(*) AS c FROM custom_quote_requests WHERE is_seen=0")['c'] ?? 0);
+            Database::query("UPDATE custom_quote_requests SET is_seen=1 WHERE is_seen=0");
+            json(['ok'=>true,'quotes'=>$rows,'counts'=>$counts,'unseen'=>$unseen]);
         } catch (\Throwable $e) {
             json(['ok'=>false,'msg'=>'Could not load custom orders','quotes'=>[],'counts'=>[]], 500);
         }
@@ -1984,7 +2010,8 @@ if (str_starts_with($uri, '/admin/api/')) {
             if ($type === 'payment' && (empty($quote['user_id']) || trim((string)($quote['quote_token'] ?? '')) === '')) json(['ok'=>false,'msg'=>'Create the account and generate payment link first.'], 422);
             $template = Database::row("SELECT body FROM whatsapp_message_templates WHERE template_key=? AND is_active=1 LIMIT 1", [$key]); $text = (string)($template['body'] ?? $whatsappTemplateDefaults[$key]['body']);
             $base = rtrim((defined('APP_URL') ? (string)APP_URL : ''), '/'); if ($base === '') { $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http'; $base = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? ''); }
-            $data = ['customer_name'=>(string)$quote['customer_name'],'quote_id'=>(string)$quote['request_code'],'product_name'=>(string)$quote['product_name'],'size_dimension'=>(string)$quote['size_dimension'],'material_type'=>(string)$quote['material_type'],'quantity'=>(string)$quote['quantity'],'quoted_amount'=>'₹'.number_format((float)$quote['quoted_amount'],2),'quote_note'=>(string)$quote['quote_note'],'business_name'=>(string)Database::setting('site_name','RCS Print'),'login_url'=>$base.'/login?next=/cart','login_identifier'=>(string)($quote['account_email'] ?: $quote['account_phone'] ?: $quote['email']),'login_password'=>(string)preg_replace('/\D+/', '', (string)($quote['account_phone'] ?: $quote['phone'])),'payment_link'=>$base.'/custom-cart/'.rawurlencode((string)$quote['quote_token'])];
+            $customCartUrl = $base.'/custom-cart/'.rawurlencode((string)$quote['quote_token']);
+            $data = ['customer_name'=>(string)$quote['customer_name'],'quote_id'=>(string)$quote['request_code'],'product_name'=>(string)$quote['product_name'],'size_dimension'=>(string)$quote['size_dimension'],'material_type'=>(string)$quote['material_type'],'quantity'=>(string)$quote['quantity'],'quoted_amount'=>'₹'.number_format((float)$quote['quoted_amount'],2),'quote_note'=>(string)$quote['quote_note'],'business_name'=>(string)Database::setting('site_name','RCS Print'),'login_url'=>$base.'/login?next='.rawurlencode('/custom-cart/'.(string)$quote['quote_token']),'login_identifier'=>(string)($quote['account_email'] ?: $quote['account_phone'] ?: $quote['email']),'login_password'=>(string)preg_replace('/\D+/', '', (string)($quote['account_phone'] ?: $quote['phone'])),'payment_link'=>$customCartUrl,'custom_cart_url'=>$customCartUrl];
             $message = preg_replace_callback('/\{([a-z0-9_]+)\}/i', static fn($x) => $data[$x[1]] ?? $x[0], $text); json(['ok'=>true,'message'=>$message]);
         } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not prepare WhatsApp message: '.$e->getMessage()],500); }
     }
@@ -2006,6 +2033,10 @@ if (str_starts_with($uri, '/admin/api/')) {
         } catch (\Throwable $e) {
             json(['ok'=>false,'msg'=>'Could not update custom order: ' . $e->getMessage()], 500);
         }
+    }
+    if (preg_match('#^/admin/api/custom-orders/(\d+)/attention/clear$#', $uri, $m) && $method === 'POST') {
+        Database::query("UPDATE custom_quote_requests SET customer_update_pending=0,customer_update_type=NULL,customer_update_at=NULL WHERE id=?",[(int)$m[1]]);
+        json(['ok'=>true]);
     }
 
     if ($uri === '/admin/api/business-needs' && $method === 'GET') {
@@ -2803,8 +2834,8 @@ if ($uri === '/admin/orders') {
     $sort = trim((string)($_GET['sort'] ?? 'newest'));
     $dateFrom = trim((string)($_GET['date_from'] ?? ''));
     $dateTo = trim((string)($_GET['date_to'] ?? ''));
-    $page   = max(1, (int)($_GET['page'] ?? 1));
-    $perPage = 12;
+    $page = 1;
+    $perPage = PHP_INT_MAX;
     $hasSeen = $ensureOrderSeenColumn();
 
     $summaryRow = Database::row(
@@ -2879,11 +2910,12 @@ if ($uri === '/admin/orders') {
 
     $countRow = Database::row("SELECT COUNT(*) c FROM orders $whereSql", $params);
     $total = (int)($countRow['c'] ?? 0);
-    $offset = ($page - 1) * $perPage;
-
-    $orders = Database::rows("SELECT * FROM orders $whereSql ORDER BY $orderSql LIMIT $perPage OFFSET $offset", $params);
-    foreach ($orders as &$o) {
-        $o['items'] = Database::rows(
+    $orders = Database::rows("SELECT * FROM orders $whereSql ORDER BY $orderSql", $params);
+    $itemsByOrder = [];
+    if ($orders) {
+        $orderIds = array_map(static fn($order) => (int)$order['id'], $orders);
+        $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
+        $allItems = Database::rows(
             "SELECT oi.*,
                     COALESCE(pi.image_path, pi.url) AS product_image,
                     af.id AS artwork_file_id,
@@ -2906,10 +2938,14 @@ if ($uri === '/admin/orders') {
              LEFT JOIN order_design_approvals oda ON oda.order_item_id = oi.id
              LEFT JOIN artwork_files af ON af.id = oda.customer_artwork_file_id
              LEFT JOIN artwork_files pf ON pf.id = oda.proof_file_id
-             WHERE oi.order_id=?
-             ORDER BY oi.id ASC",
-            [$o['id']]
+             WHERE oi.order_id IN ($placeholders)
+             ORDER BY oi.order_id, oi.id ASC",
+            $orderIds
         );
+        foreach ($allItems as $item) $itemsByOrder[(int)$item['order_id']][] = $item;
+    }
+    foreach ($orders as &$o) {
+        $o['items'] = $itemsByOrder[(int)$o['id']] ?? [];
         foreach ($o['items'] as &$item) {
             if (empty($item['design_approval_id'])) {
                 $customerArtwork = Database::row(

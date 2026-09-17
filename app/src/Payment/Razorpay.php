@@ -108,7 +108,7 @@ class Razorpay
             );
 
             \Database::query(
-                "UPDATE custom_quote_requests SET payment_status='paid', status='converted_to_order', order_id=?, updated_at=NOW() WHERE order_id=?",
+                "UPDATE custom_quote_requests SET payment_status='paid', status='converted_to_order', order_id=?, customer_update_pending=1, customer_update_type='customer_paid', customer_update_at=NOW(), updated_at=NOW() WHERE order_id=?",
                 [$internalOrderId, $internalOrderId]
             );
 

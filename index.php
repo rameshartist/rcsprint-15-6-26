@@ -534,7 +534,8 @@ if ($uri === '/profile' && $method === 'GET') {
     $myReviews = \Reviews\ProductReview::userReviews((int)$user['id']);
     $wishlistItems = \Wishlist\Wishlist::itemsForUser((int)$user['id']);
     $myDesigns = \Designs\UserDesigns::forUser((int)$user['id']);
-    view('profile', compact('user', 'profile', 'orders', 'customOrders', 'reviewableItems', 'myReviews', 'wishlistItems', 'myDesigns'));
+    try { Database::query("CREATE TABLE IF NOT EXISTS user_addresses (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id INT UNSIGNED NOT NULL,label VARCHAR(80) NOT NULL DEFAULT 'Address',business_name VARCHAR(180) NULL,address_line1 VARCHAR(255) NOT NULL,address_line2 VARCHAR(255) NULL,city VARCHAR(120) NOT NULL,state VARCHAR(120) NOT NULL,pincode VARCHAR(20) NOT NULL,is_default TINYINT(1) NOT NULL DEFAULT 0,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,KEY idx_user_addresses_user (user_id,is_default,id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); $savedAddresses=Database::rows("SELECT * FROM user_addresses WHERE user_id=? ORDER BY is_default DESC,id DESC",[(int)$user['id']]); } catch (\Throwable) { $savedAddresses=[]; }
+    view('profile', compact('user', 'profile', 'orders', 'customOrders', 'customFulfillmentOrders', 'savedAddresses', 'reviewableItems', 'myReviews', 'wishlistItems', 'myDesigns'));
     exit;
 }
 

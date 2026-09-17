@@ -14533,3 +14533,14 @@ body.portfolio-lightbox-open { overflow:hidden; }
 .account-order-detail.has-admin-update .account-status{background:#b91c1c;color:#fff;border-color:#991b1b}
 .account-order-tracking .account-track-steps{grid-template-columns:repeat(6,minmax(0,1fr))}
 @media(max-width:700px){.header-login-btn span{max-width:96px}.account-order-detail.has-admin-update{background:#fee2e2}}
+
+/* Flat brand treatment for quote entry points. */
+.custom-quote-head{background:#5b21b6!important}
+.custom-quote-submit{background:#f97316!important;color:#fff!important;box-shadow:0 14px 30px rgba(249,115,22,.24)!important}
+.header-quote-btn,.md-quote-action{background:#f97316!important;color:#fff!important;border-color:#f97316!important}
+.header-quote-btn:hover,.md-quote-action:hover{background:#ea580c!important;color:#fff!important}
+.account-order-cancel-row{display:flex;justify-content:flex-end;padding:0 12px 14px}
+.account-order-cancel-btn{min-height:42px;padding:9px 15px;border:1px solid #ef4444;border-radius:12px;background:#fff;color:#b91c1c;font-weight:900;cursor:pointer}
+.account-order-cancel-btn:hover{background:#fee2e2}.account-order-cancel-btn:disabled{opacity:.55;cursor:wait}
+.account-saved-address-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:16px}.account-saved-address{display:flex;justify-content:space-between;gap:12px;padding:15px;border:1px solid #dbe4f0;border-radius:15px;background:#fff}.account-saved-address p{margin:7px 0 0;color:#64748b;line-height:1.55}.account-saved-address button{align-self:flex-start;border:0;background:#fee2e2;color:#b91c1c;padding:7px 10px;border-radius:9px;font-weight:800;cursor:pointer}.account-new-address{border-color:#c4b5fd!important;background:#faf5ff!important}@media(max-width:700px){.account-saved-address-grid{grid-template-columns:1fr}}
+.checkout-saved-address-select{display:grid;gap:8px;margin:0 0 14px;color:#334155;font-size:13px;font-weight:900}

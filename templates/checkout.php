@@ -49,6 +49,7 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
 
         <section class="checkout-card checkout-shipping-card">
           <div class="checkout-card-title"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i><h2>Shipping Address</h2></div>
+          <?php if (!empty($user['id'])): ?><label class="checkout-saved-address-select" id="saved-address-wrap" hidden>Choose a saved address<select id="saved-address-select" class="checkout-input" onchange="selectCheckoutAddress(this.value)"><option value="">Enter a new address</option></select></label><?php endif; ?>
           <div class="checkout-form-grid">
             <label class="checkout-full-field">Business / Full Name <b>*</b><input id="s-business" class="checkout-input" placeholder="Enter business or full name" autocomplete="organization"></label>
             <label>Address Line 1 <b>*</b><input id="s-add1" class="checkout-input" placeholder="House / Flat / Building / Street" autocomplete="address-line1"></label>
@@ -58,7 +59,7 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
             <label>PIN Code <b>*</b><input id="s-pin" class="checkout-input" placeholder="Enter PIN code" autocomplete="postal-code"></label>
           </div>
           <?php if (!empty($user['id'])): ?>
-          <label id="ship-save-wrap" class="checkout-checkline" style="display:none"><input type="checkbox" id="ship-save-default"> <span>Save this address for future use</span></label>
+          <label id="ship-save-wrap" class="checkout-checkline" style="display:none"><input type="checkbox" id="ship-save-default"> <span>Save this address in My Account for future use</span></label>
           <?php endif; ?>
           <div id="shipErr" class="checkout-error" style="display:none"></div>
         </section>
@@ -150,6 +151,7 @@ const CSRF = '<?= $csrf ?>';
 const BIZ_WA = '<?= htmlspecialchars($bizWa) ?>'; const CUSTOM_QUOTE_ID=<?= $isCustomCheckout?$customQuoteId:0 ?>;
 let checkoutCoupon = null;
 let checkoutProfile = { shipping: null, billing: null };
+let checkoutAddresses = [];
 
 async function applyCouponCheckout() {
   const code = document.getElementById('couponInp').value.trim().toUpperCase();
@@ -420,6 +422,7 @@ function setField(id, val = '') {
   const el = document.getElementById(id);
   if (el) el.value = val || '';
 }
+function selectCheckoutAddress(value){const address=checkoutAddresses.find(item=>String(item.id)===String(value));if(!address)return;setField('s-business',address.business_name);setField('s-add1',address.address_line1);setField('s-add2',address.address_line2);setField('s-city',address.city);setField('s-state',address.state);setField('s-pin',address.pincode);syncBillingFromShipping();}
 
 async function prefillCheckoutFromProfile() {
   <?php if (empty($user['id'])): ?>
@@ -432,6 +435,9 @@ async function prefillCheckoutFromProfile() {
 
     checkoutProfile.shipping = data.profile.shipping || null;
     checkoutProfile.billing = data.profile.billing || null;
+    checkoutAddresses = Array.isArray(data.profile.addresses) ? data.profile.addresses : [];
+    const addressWrap=document.getElementById('saved-address-wrap'),addressSelect=document.getElementById('saved-address-select');
+    if(addressWrap&&addressSelect&&checkoutAddresses.length){addressWrap.hidden=false;addressSelect.innerHTML='<option value="">Enter a new address</option>'+checkoutAddresses.map(a=>`<option value="${a.id}">${String(a.label||'Address')} — ${String(a.address_line1||'')}</option>`).join('');const preferred=checkoutAddresses.find(a=>Number(a.is_default)===1)||checkoutAddresses[0];addressSelect.value=String(preferred.id);selectCheckoutAddress(preferred.id);}
     const profileName = data.profile.name || '';
     const profileCompany = data.profile.company || '';
 

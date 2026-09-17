@@ -14,6 +14,8 @@ $isSuperAdmin = \Auth\Auth::isSuperAdmin();
 $adminRoleLabel = $isSuperAdmin ? 'Super Admin' : 'Admin';
 $adminNewOrderCount = 0;
 try { $adminNewOrderCount = (int)(Database::row("SELECT COUNT(*) AS c FROM orders WHERE status='new_order' AND COALESCE(is_seen,0)=0")['c'] ?? 0); } catch (\Throwable) {}
+$adminNewCustomCount = 0;
+try { $adminNewCustomCount = (int)(Database::row("SELECT COUNT(*) AS c FROM custom_quote_requests WHERE COALESCE(is_seen,0)=0")['c'] ?? 0); } catch (\Throwable) {}
 ?>
 <link rel="stylesheet" href="/assets/css/app.css?v=<?= (int)$adminAppCssVersion ?>">
 <link rel="stylesheet" href="/assets/css/admin.css?v=<?= (int)$adminCssVersion ?>">
@@ -58,7 +60,7 @@ try { $adminNewOrderCount = (int)(Database::row("SELECT COUNT(*) AS c FROM order
       <?php $cur = $currentAdmPage ?? ''; ?>
       <a href="/admin/dashboard" class="adm-ni <?= $cur === 'dashboard' ? 'act' : '' ?>"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>Dashboard</a>
       <a href="/admin/orders" class="adm-ni <?= $cur === 'orders' ? 'act' : '' ?>"><svg viewBox="0 0 24 24"><path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg><span>Orders</span><?php if ($adminNewOrderCount > 0): ?><b class="adm-nav-order-count"><?= number_format($adminNewOrderCount) ?></b><?php endif; ?></a>
-      <a href="/admin/custom-orders" class="adm-ni <?= $cur === 'custom-orders' ? 'act' : '' ?>"><svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14l4-4h12c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 8H7V9h10v2zm0-3H7V6h10v2zm-6 6H7v-2h4v2z"/></svg>Custom Orders</a>
+      <a href="/admin/custom-orders" class="adm-ni <?= $cur === 'custom-orders' ? 'act' : '' ?>"><svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14l4-4h12c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 8H7V9h10v2zm0-3H7V6h10v2zm-6 6H7v-2h4v2z"/></svg><span>Custom Orders</span><?php if ($adminNewCustomCount > 0): ?><b class="adm-nav-order-count"><?= number_format($adminNewCustomCount) ?></b><?php endif; ?></a>
       <a href="/admin/design-history" class="adm-ni <?= $cur === 'design-history' ? 'act' : '' ?>"><svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 1 0 8.95 10h-2.02A7 7 0 1 1 13 5v4l5-5-5-5v4zm-1 4h2v6l5 3-.95 1.6L12 14V7z"/></svg>Design History</a>
       <div class="adm-nl">Catalog</div>
       <a href="/admin/products" class="adm-ni <?= $cur === 'products' ? 'act' : '' ?>"><svg viewBox="0 0 24 24"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>Products</a>

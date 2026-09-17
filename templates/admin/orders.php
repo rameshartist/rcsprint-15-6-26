@@ -127,7 +127,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
         <span class="adm-order-status-icon"><?= htmlspecialchars($card['icon']) ?></span>
         <span class="adm-order-status-copy"><b><?= number_format((int)$card['count']) ?></b><strong><?= htmlspecialchars($card['label']) ?></strong></span>
       </a>
-      <?php if ($showAttentionButton): ?><a class="adm-order-attention-count" href="<?= htmlspecialchars($attentionHref) ?>" aria-label="Show <?= (int)($attentionCounts[$card['key']] ?? 0) ?> updated <?= htmlspecialchars($card['label']) ?> orders"><?= number_format((int)($attentionCounts[$card['key']] ?? 0)) ?> Updates</a><?php endif; ?>
+      <?php if ($showAttentionButton): ?><a class="adm-order-attention-count" href="<?= htmlspecialchars($attentionHref) ?>" aria-label="Show <?= (int)($attentionCounts[$card['key']] ?? 0) ?> updated <?= htmlspecialchars($card['label']) ?> orders"><?= number_format((int)($attentionCounts[$card['key']] ?? 0)) ?></a><?php endif; ?>
     </article>
   <?php endforeach; ?>
 </div>
@@ -186,6 +186,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
         'customer_revision_requested' => 'Revision Requested',
         'customer_artwork_uploaded' => 'Customer Artwork Uploaded',
         'customer_artwork_reuploaded' => 'Artwork Reuploaded',
+        'customer_cancelled' => 'Cancelled by Customer',
         default => 'Customer Update',
     };
     $hasDesignAttention = false;
@@ -361,15 +362,6 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
     </div>
   </div>
 </div>
-
-<?php if ($total > $perPage): ?>
-<div style="display:flex;gap:8px;justify-content:center;margin-top:20px;flex-wrap:wrap">
-  <?php for ($i = 1; $i <= ceil($total / $perPage); $i++): ?>
-  <?php $pageHref = $orderUrl(['page'=>$i,'status'=>$status,'search'=>$search,'payment_status'=>$paymentStatus,'seen'=>$seen,'attention'=>$attention ? 1 : null,'sort'=>$sort,'date_from'=>$dateFrom,'date_to'=>$dateTo]); ?>
-  <a href="<?= htmlspecialchars($pageHref) ?>" class="btn <?= $page === $i ? 'btn-blue' : 'btn-outline' ?> btn-sm"><?= $i ?></a>
-  <?php endfor; ?>
-</div>
-<?php endif; ?>
 
 <script>
 const ADM_OPEN_ORDER_KEY = 'adm_open_order_cards';
