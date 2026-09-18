@@ -241,6 +241,29 @@ if (preg_match('#^/api/orders/(\d+)/cancel$#', $uri, $m) && $method === 'POST') 
     }
 }
 
+if (preg_match('#^/api/orders/(\d+)/refund-request$#', $uri, $m) && $method === 'POST') {
+    \Auth\Auth::require();
+    \Orders\OrderManager::ensureCustomerUpdateSchema();
+    $user = \Auth\Auth::user();
+    $db = Database::get();
+    try {
+        $db->beginTransaction();
+        $order = Database::row("SELECT id,status,payment_status,refund_requested_at FROM orders WHERE id=? AND user_id=? FOR UPDATE", [(int)$m[1], (int)$user['id']]);
+        if (!$order) { $db->rollBack(); json(['ok'=>false,'msg'=>'Order not found.'], 404); }
+        if ((string)$order['status'] !== 'cancelled') { $db->rollBack(); json(['ok'=>false,'msg'=>'Refund can be requested only after the order is cancelled.'], 422); }
+        if ((string)$order['payment_status'] !== 'paid') { $db->rollBack(); json(['ok'=>false,'msg'=>'This order has no captured online payment to refund.'], 422); }
+        if (!empty($order['refund_requested_at'])) { $db->rollBack(); json(['ok'=>false,'msg'=>'Refund request is already pending.'], 409); }
+        $note = trim((string)($body['note'] ?? '')) ?: 'Refund requested by customer.';
+        Database::query("UPDATE orders SET refund_requested_at=NOW(),refund_request_note=?,customer_update_pending=1,customer_update_type='customer_refund_requested',customer_update_at=NOW(),updated_at=NOW() WHERE id=?", [$note,(int)$order['id']]);
+        Database::insert("INSERT INTO order_status_history (order_id,status,note,created_by,created_at) VALUES (?,'cancelled',?,'customer',NOW())", [(int)$order['id'],$note]);
+        $db->commit();
+        json(['ok'=>true,'msg'=>'Refund request submitted successfully.']);
+    } catch (\Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        json(['ok'=>false,'msg'=>'Could not submit refund request. Please try again.'],500);
+    }
+}
+
 
 if ($uri === '/api/custom-quotes' && $method === 'POST') {
     try {
@@ -259,6 +282,7 @@ if ($uri === '/api/custom-quotes' && $method === 'POST') {
             status VARCHAR(40) NOT NULL DEFAULT 'new',
             admin_notes TEXT NULL,
             quoted_amount DECIMAL(12,2) NULL,
+            design_fee DECIMAL(12,2) NOT NULL DEFAULT 0,
             currency VARCHAR(10) NOT NULL DEFAULT 'INR',
             source_page VARCHAR(255) NULL,
             ip_address VARCHAR(64) NULL,
@@ -284,6 +308,7 @@ if ($uri === '/api/custom-quotes' && $method === 'POST') {
         foreach ([
             "ALTER TABLE custom_quote_requests ADD COLUMN admin_notes TEXT NULL AFTER status",
             "ALTER TABLE custom_quote_requests ADD COLUMN quoted_amount DECIMAL(12,2) NULL AFTER admin_notes",
+            "ALTER TABLE custom_quote_requests ADD COLUMN design_fee DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER quoted_amount",
             "ALTER TABLE custom_quote_requests ADD COLUMN currency VARCHAR(10) NOT NULL DEFAULT 'INR' AFTER quoted_amount",
             "ALTER TABLE custom_quote_requests ADD COLUMN order_id INT UNSIGNED NULL AFTER user_agent",
             "ALTER TABLE custom_quote_requests ADD COLUMN customer_type VARCHAR(30) NOT NULL DEFAULT 'guest' AFTER order_id",

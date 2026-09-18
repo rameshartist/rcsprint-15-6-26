@@ -108,7 +108,9 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
                 <?php else: ?>
                   <p><?= number_format((int)($item['quantity'] ?? 0)) ?> pcs<?= !empty($item['quality_name']) ? ' | ' . htmlspecialchars((string)$item['quality_name']) : '' ?></p>
                 <?php endif; ?>
+                <?php $itemBreakdown = is_array($item['price_breakdown'] ?? null) ? $item['price_breakdown'] : (json_decode((string)($item['price_breakdown'] ?? '{}'), true) ?: []); $itemDesignFee = (float)($itemBreakdown['design_fee'] ?? 0); ?>
                 <strong>₹<?= number_format((float)($item['total_price'] ?? 0)) ?></strong>
+                <?php if ($itemDesignFee > 0): ?><small>Includes ₹<?= number_format($itemDesignFee) ?> design fee</small><?php endif; ?>
               </div>
               <div class="checkout-item-side">
                 <span><?= number_format((int)($item['quantity'] ?? 0)) ?></span>

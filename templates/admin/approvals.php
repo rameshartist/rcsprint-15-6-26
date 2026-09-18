@@ -28,7 +28,7 @@ async function loadApprovals(){
   }catch(e){wrap.innerHTML='<div class="fsec" style="color:var(--red)">Could not load approvals.</div>';}
 }
 async function decide(type,id,decision){
-  let note=''; if(decision==='reject'){ note=prompt('Reason for rejection?')||''; if(!note.trim()) return; }
+  let note=''; if(decision==='reject'){ note=await adminPrompt('Reason for rejection?','',{title:'Reject Approval Request',confirmText:'Reject'})||''; if(!note.trim()) return; }
   const res=await fetch(`/admin/api/approvals/${type}/${id}/${decision}`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':CSRF},credentials:'same-origin',body:JSON.stringify({note})}).then(r=>r.json());
   if(!res.ok){alert(res.msg||'Could not update approval');return;} loadApprovals();
 }

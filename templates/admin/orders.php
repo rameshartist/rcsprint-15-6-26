@@ -187,6 +187,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
         'customer_artwork_uploaded' => 'Customer Artwork Uploaded',
         'customer_artwork_reuploaded' => 'Artwork Reuploaded',
         'customer_cancelled' => 'Cancelled by Customer',
+        'customer_refund_requested' => 'Refund Requested',
         default => 'Customer Update',
     };
     $hasDesignAttention = false;
@@ -457,7 +458,7 @@ async function clearCustomerUpdate(id, btn) {
 
 async function setDesignApproval(id, status) {
   const label = status === 'approved' ? 'Approve design?' : 'Describe the artwork/design issue for the customer';
-  const note = window.prompt(label, status === 'approved' ? 'Design approved for printing.' : '');
+  const note = await adminPrompt(label, status === 'approved' ? 'Design approved for printing.' : '', {title:status === 'approved'?'Approve Design':'Mark Design Issue',confirmText:status === 'approved'?'Approve':'Save Issue'});
   if (note === null) return;
   if (status === 'issue_found' && !note.trim()) {
     toast('Please add an issue note for the customer', 'error');
@@ -500,7 +501,7 @@ async function uploadDesignProof(id) {
   const input = document.getElementById(`proof_${id}`);
   if (!input || !input.files.length) { toast('Please choose a proof file first', 'error'); return; }
   rememberCardForControl(input);
-  const note = window.prompt('Optional proof note for customer/admin', 'Proof uploaded for review.') ?? '';
+  const note = await adminPrompt('Optional proof note for customer/admin', 'Proof uploaded for review.', {title:'Upload Design Proof',confirmText:'Continue Upload'}); if(note===null)return;
   const fd = new FormData();
   fd.append('proof', input.files[0]);
   fd.append('admin_note', note);

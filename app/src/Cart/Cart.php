@@ -111,7 +111,9 @@ class Cart
     {
         self::ensureCustomQuoteSchema();
         $quoteId = (int)($quote['id'] ?? 0);
-        $amount = (float)($quote['quoted_amount'] ?? 0);
+        $baseAmount = (float)($quote['quoted_amount'] ?? 0);
+        $designFee = max(0, (float)($quote['design_fee'] ?? 0));
+        $amount = $baseAmount + $designFee;
         if ($quoteId <= 0) return ['ok' => false, 'msg' => 'Invalid custom quote.'];
         if ($amount <= 0) return ['ok' => false, 'msg' => 'Quote amount is not ready yet.'];
         if (in_array((string)($quote['status'] ?? ''), ['converted_to_order','closed','rejected'], true)) {
@@ -134,7 +136,8 @@ class Cart
             'design_brief' => (string)($quote['instructions'] ?? ''),
             'notes' => (string)($quote['quote_note'] ?? ''),
             'price_breakdown' => json_encode([
-                'base_price' => $amount,
+                'base_price' => $baseAmount,
+                'design_fee' => $designFee,
                 'custom_quote_id' => $quoteId,
                 'request_code' => (string)($quote['request_code'] ?? ''),
                 'requested_quantity' => (string)($quote['quantity'] ?? ''),

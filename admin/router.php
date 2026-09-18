@@ -133,6 +133,7 @@ $ensureCustomQuoteSchema = static function (): void {
             status VARCHAR(40) NOT NULL DEFAULT 'new',
             admin_notes TEXT NULL,
             quoted_amount DECIMAL(12,2) NULL,
+            design_fee DECIMAL(12,2) NOT NULL DEFAULT 0,
             currency VARCHAR(10) NOT NULL DEFAULT 'INR',
             source_page VARCHAR(255) NULL,
             ip_address VARCHAR(64) NULL,
@@ -158,6 +159,7 @@ $ensureCustomQuoteSchema = static function (): void {
         foreach ([
             "ALTER TABLE custom_quote_requests ADD COLUMN admin_notes TEXT NULL AFTER status",
             "ALTER TABLE custom_quote_requests ADD COLUMN quoted_amount DECIMAL(12,2) NULL AFTER admin_notes",
+            "ALTER TABLE custom_quote_requests ADD COLUMN design_fee DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER quoted_amount",
             "ALTER TABLE custom_quote_requests ADD COLUMN currency VARCHAR(10) NOT NULL DEFAULT 'INR' AFTER quoted_amount",
             "ALTER TABLE custom_quote_requests ADD COLUMN order_id INT UNSIGNED NULL AFTER user_agent",
             "ALTER TABLE custom_quote_requests ADD COLUMN customer_type VARCHAR(30) NOT NULL DEFAULT 'guest' AFTER order_id",
@@ -259,7 +261,7 @@ $whatsappTemplateDefaults = [
     'custom_quote_sent' => [
         'title' => 'Send Custom Quote',
         'description' => 'Sent after the quoted amount and quote note are saved.',
-        'body' => "Hello {customer_name}, 👋\n\nThank you for your custom quotation request {quote_id}.\n\nProduct: {product_name}\nSize: {size_dimension}\nMaterial: {material_type}\nQuantity: {quantity}\nQuoted Amount: {quoted_amount}\n\n{quote_note}\n\nPlease reply APPROVE to confirm this quote.\n\nThank you,\n{business_name}",
+        'body' => "Hello {customer_name}, 👋\n\nThank you for your custom quotation request {quote_id}.\n\nProduct: {product_name}\nSize: {size_dimension}\nMaterial: {material_type}\nQuantity: {quantity}\nAmount: {quoted_amount}\nDesign Fee: {design_fee}\nSubtotal before GST: {custom_subtotal}\n\n{quote_note}\n\nPlease reply APPROVE to confirm this quote.\n\nThank you,\n{business_name}",
     ],
     'custom_quote_payment' => [
         'title' => 'Send Custom Order Payment Link',
@@ -946,7 +948,7 @@ if (str_starts_with($uri, '/admin/api/')) {
 
     // ── Product Reviews Moderation ────────────────────────────
     if ($uri === '/admin/api/reviews' && $method === 'GET') {
-        $status = trim((string)($_GET['status'] ?? 'all'));
+        $status = trim((string)($_GET['status'] ?? 'new_order'));
         $search = trim((string)($_GET['search'] ?? ''));
         json(['ok' => true, 'reviews' => \Reviews\ProductReview::adminList($status, $search, 200)]);
     }
@@ -1932,7 +1934,7 @@ if (str_starts_with($uri, '/admin/api/')) {
         $status = trim((string)($body['status'] ?? 'new'));
         if (!in_array($status, $allowed, true)) json(['ok'=>false,'msg'=>'Invalid status'], 422);
         try {
-            $existing = Database::row("SELECT payment_status,order_id FROM custom_quote_requests WHERE id=? LIMIT 1", [(int)$m[1]]);
+            $existing = Database::row("SELECT payment_status,order_id,user_id FROM custom_quote_requests WHERE id=? LIMIT 1", [(int)$m[1]]);
             if (!$existing) json(['ok'=>false,'msg'=>'Custom quote not found'], 404);
             if (in_array($status, ['paid','converted_to_order'], true) && ((string)($existing['payment_status'] ?? '') !== 'paid' || (int)($existing['order_id'] ?? 0) < 1)) {
                 Database::query("UPDATE custom_quote_requests SET status='payment_pending',payment_status='payment_pending',updated_at=NOW() WHERE id=?", [(int)$m[1]]);
@@ -1945,7 +1947,7 @@ if (str_starts_with($uri, '/admin/api/')) {
             if ($status === 'customer_approved') {
                 $timestampSql .= ', approved_at=COALESCE(approved_at, NOW())';
             }
-            Database::query("UPDATE custom_quote_requests SET customer_name=?, phone=?, email=?, product_name=?, size_dimension=?, material_type=?, quantity=?, instructions=?, status=?, quoted_amount=?, quote_note=?, payment_status=?{$timestampSql}, updated_at=NOW() WHERE id=?", [
+            Database::query("UPDATE custom_quote_requests SET customer_name=?, phone=?, email=?, product_name=?, size_dimension=?, material_type=?, quantity=?, instructions=?, status=?, quoted_amount=?, design_fee=?, quote_note=?, payment_status=?{$timestampSql}, updated_at=NOW() WHERE id=?", [
                 trim((string)($body['customer_name'] ?? '')),
                 trim((string)($body['phone'] ?? '')),
                 trim((string)($body['email'] ?? '')) ?: null,
@@ -1956,10 +1958,15 @@ if (str_starts_with($uri, '/admin/api/')) {
                 trim((string)($body['instructions'] ?? '')),
                 $status,
                 ($body['quoted_amount'] ?? '') !== '' && ($body['quoted_amount'] ?? null) !== null ? (float)$body['quoted_amount'] : null,
+                max(0, (float)($body['design_fee'] ?? 0)),
                 trim((string)($body['quote_note'] ?? '')),
                 (string)($existing['payment_status'] ?? 'not_required'),
                 (int)$m[1],
             ]);
+            if (!empty($existing['user_id']) && in_array($status, ['customer_approved','payment_pending'], true)) {
+                $savedQuote = Database::row("SELECT * FROM custom_quote_requests WHERE id=?", [(int)$m[1]]);
+                if ($savedQuote) \Cart\Cart::addCustomQuote($savedQuote, (int)$existing['user_id']);
+            }
             json(['ok'=>true]);
         } catch (\Throwable $e) {
             json(['ok'=>false,'msg'=>'Could not save custom order: ' . $e->getMessage()], 500);
@@ -2027,7 +2034,7 @@ if (str_starts_with($uri, '/admin/api/')) {
             $template = Database::row("SELECT body FROM whatsapp_message_templates WHERE template_key=? AND is_active=1 LIMIT 1", [$key]); $text = (string)($template['body'] ?? $whatsappTemplateDefaults[$key]['body']);
             $base = rtrim((defined('APP_URL') ? (string)APP_URL : ''), '/'); if ($base === '') { $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http'; $base = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? ''); }
             $customCartUrl = $base.'/custom-cart/'.rawurlencode((string)$quote['quote_token']);
-            $data = ['customer_name'=>(string)$quote['customer_name'],'quote_id'=>(string)$quote['request_code'],'product_name'=>(string)$quote['product_name'],'size_dimension'=>(string)$quote['size_dimension'],'material_type'=>(string)$quote['material_type'],'quantity'=>(string)$quote['quantity'],'quoted_amount'=>'₹'.number_format((float)$quote['quoted_amount'],2),'quote_note'=>(string)$quote['quote_note'],'business_name'=>(string)Database::setting('site_name','RCS Print'),'login_url'=>$base.'/login?next='.rawurlencode('/custom-cart/'.(string)$quote['quote_token']),'login_identifier'=>(string)($quote['account_email'] ?: $quote['account_phone'] ?: $quote['email']),'login_password'=>(string)preg_replace('/\D+/', '', (string)($quote['account_phone'] ?: $quote['phone'])),'payment_link'=>$customCartUrl,'custom_cart_url'=>$customCartUrl];
+            $data = ['customer_name'=>(string)$quote['customer_name'],'quote_id'=>(string)$quote['request_code'],'product_name'=>(string)$quote['product_name'],'size_dimension'=>(string)$quote['size_dimension'],'material_type'=>(string)$quote['material_type'],'quantity'=>(string)$quote['quantity'],'quoted_amount'=>'₹'.number_format((float)$quote['quoted_amount'],2),'design_fee'=>'₹'.number_format((float)($quote['design_fee']??0),2),'custom_subtotal'=>'₹'.number_format((float)$quote['quoted_amount']+(float)($quote['design_fee']??0),2),'quote_note'=>(string)$quote['quote_note'],'business_name'=>(string)Database::setting('site_name','RCS Print'),'login_url'=>$base.'/login?next='.rawurlencode('/custom-cart/'.(string)$quote['quote_token']),'login_identifier'=>(string)($quote['account_email'] ?: $quote['account_phone'] ?: $quote['email']),'login_password'=>(string)preg_replace('/\D+/', '', (string)($quote['account_phone'] ?: $quote['phone'])),'payment_link'=>$customCartUrl,'custom_cart_url'=>$customCartUrl];
             $message = preg_replace_callback('/\{([a-z0-9_]+)\}/i', static fn($x) => $data[$x[1]] ?? $x[0], $text); json(['ok'=>true,'message'=>$message]);
         } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not prepare WhatsApp message: '.$e->getMessage()],500); }
     }

@@ -1055,3 +1055,16 @@ body.admin-page-custom-orders .custom-quote-update-count:hover,body.admin-page-c
 /* Expandable custom-order cards intentionally have no update/attention colouring. */
 body.admin-page-custom-orders .custom-quote-card--attention{border-color:var(--adm-line);box-shadow:var(--adm-shadow)}
 body.admin-page-custom-orders .custom-quote-card--attention .adm-order-card-head{background:#fff}
+
+/* Status-driven attention: new orders stay highlighted until moved to Received. */
+body.admin-page-orders .adm-order-card--new{border-color:#f87171!important;background:#fff1f2!important;box-shadow:0 12px 28px rgba(153,27,27,.14)!important}
+body.admin-page-orders .adm-order-card--new .adm-order-card-head{background:#fff1f2!important}
+/* Keep Custom Orders aligned with the Orders module's card sizing and rhythm. */
+body.admin-page-custom-orders .custom-quote-status-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+body.admin-page-custom-orders .custom-quote-status-card{min-height:104px!important;border-radius:18px!important;padding:16px!important}
+body.admin-page-custom-orders .adm-order-card{border-radius:18px!important}
+body.admin-page-custom-orders .adm-order-card-head{min-height:92px;padding:16px 18px!important}
+body.admin-page-custom-orders .custom-quote-edit-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:1300px){body.admin-page-custom-orders .custom-quote-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){body.admin-page-custom-orders .custom-quote-status-grid{grid-template-columns:1fr}}
+.adm-dialog[hidden]{display:none}.adm-dialog{position:fixed;inset:0;z-index:5000;display:grid;place-items:center;padding:20px}.adm-dialog-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.58);backdrop-filter:blur(3px)}.adm-dialog-panel{position:relative;width:min(480px,100%);padding:24px;border:1px solid #e2e8f0;border-radius:20px;background:#fff;box-shadow:0 28px 80px rgba(15,23,42,.3)}.adm-dialog-panel h2{margin:0 0 8px;color:#0f172a;font-size:20px}.adm-dialog-panel p{margin:0 0 16px;color:#475569;line-height:1.55}.adm-dialog-panel textarea{width:100%;min-height:86px;margin-bottom:16px;resize:vertical}.adm-dialog-actions{display:flex;justify-content:flex-end;gap:10px}.adm-dialog-open{overflow:hidden}

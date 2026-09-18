@@ -189,6 +189,8 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
         $isCancelled = $status === 'cancelled';
         $isWhatsappPending = $status === 'whatsapp_pending';
         $canCancel = in_array($status, ['new_order','received','whatsapp_pending','design_approved'], true) && !$isQuoteOnly;
+        $refundRequested = !empty($order['refund_requested_at']) || (string)($order['customer_update_type'] ?? '') === 'customer_refund_requested';
+        $canRequestRefund = $status === 'cancelled' && $isPaid && !$refundRequested && !$isQuoteOnly;
       ?>
         <details id="account-order-<?= $h(preg_replace('/[^A-Za-z0-9_-]+/', '-', $orderPublicId)) ?>" class="account-order-detail <?= $hasAdminUpdate ? 'has-admin-update' : '' ?>" data-order-detail="<?= $h($orderPublicId) ?>" data-order-db-id="<?= (int)($order['id'] ?? 0) ?>" data-admin-update-type="<?= $h($order['admin_update_type'] ?? '') ?>">
           <summary class="account-order-row" role="row">
@@ -338,7 +340,7 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
                 </div>
               <?php endif; ?>
             </div><?php endif; ?>
-            <?php if ($canCancel): ?><div class="account-order-cancel-row"><button type="button" class="account-order-cancel-btn" onclick="cancelAccountOrder(<?= (int)($order['id'] ?? 0) ?>, this)"><i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel Order</button></div><?php endif; ?>
+            <?php if ($canCancel || $canRequestRefund || $refundRequested): ?><div class="account-order-cancel-row"><?php if ($canCancel): ?><button type="button" class="account-order-cancel-btn" onclick="cancelAccountOrder(<?= (int)($order['id'] ?? 0) ?>, this)"><i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel Order</button><?php endif; ?><?php if ($canRequestRefund): ?><button type="button" class="account-order-refund-btn" onclick="requestAccountRefund(<?= (int)($order['id'] ?? 0) ?>, this)"><i class="fa-solid fa-rotate-left"></i> Request Refund</button><?php elseif ($refundRequested): ?><span class="account-refund-pending">Refund requested</span><?php endif; ?></div><?php endif; ?>
           </div>
         </details>
       <?php endforeach; ?>
@@ -1293,6 +1295,16 @@ async function cancelAccountOrder(id, btn) {
   const data = await resp.json().catch(()=>({ok:false,msg:'Could not cancel order.'}));
   if (!data.ok) { alert(data.msg || 'Could not cancel order.'); btn.disabled=false; return; }
   alert(data.msg || 'Order cancelled.'); location.reload();
+}
+
+async function requestAccountRefund(id, btn) {
+  if (!id || !confirm('Submit a refund request for this cancelled order?')) return;
+  const note = prompt('Optional refund note:', '') ?? '';
+  btn.disabled = true;
+  const resp = await fetch(`/api/orders/${id}/refund-request`, {method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin',body:JSON.stringify({note})});
+  const data = await resp.json().catch(()=>({ok:false,msg:'Could not request refund.'}));
+  if (!data.ok) { alert(data.msg || 'Could not request refund.'); btn.disabled=false; return; }
+  alert(data.msg || 'Refund request submitted.'); location.reload();
 }
 
 function toggleNewAddressForm(show){const form=document.getElementById('newAddressForm');if(form)form.hidden=!show;}
