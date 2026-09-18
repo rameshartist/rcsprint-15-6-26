@@ -16,6 +16,9 @@ if (in_array($method, ['POST', 'PUT', 'PATCH'])) {
     $raw = file_get_contents('php://input');
     $body = json_decode($raw, true) ?? $_POST;
 }
+$ensureUserAddresses = static function (): void {
+    Database::query("CREATE TABLE IF NOT EXISTS user_addresses (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id INT UNSIGNED NOT NULL,label VARCHAR(80) NOT NULL DEFAULT 'Address',business_name VARCHAR(180) NULL,address_line1 VARCHAR(255) NOT NULL,address_line2 VARCHAR(255) NULL,city VARCHAR(120) NOT NULL,state VARCHAR(120) NOT NULL,pincode VARCHAR(20) NOT NULL,is_default TINYINT(1) NOT NULL DEFAULT 0,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,KEY idx_user_addresses_user (user_id,is_default,id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+};
 
 // ── Auth ──────────────────────────────────────────────────────
 
@@ -58,7 +61,23 @@ if ($uri === '/api/profile' && $method === 'GET') {
     \Auth\Auth::require();
     $user = \Auth\Auth::user();
     $profile = \Auth\Auth::getProfile((int)$user['id']);
+    try { $ensureUserAddresses(); $profile['addresses'] = Database::rows("SELECT * FROM user_addresses WHERE user_id=? ORDER BY is_default DESC,id DESC", [(int)$user['id']]); } catch (\Throwable) { $profile['addresses'] = []; }
     json(['ok' => true, 'profile' => $profile]);
+}
+
+if ($uri === '/api/profile/addresses' && $method === 'POST') {
+    \Auth\Auth::require(); $user=\Auth\Auth::user(); $ensureUserAddresses();
+    foreach (['address_line1','city','state','pincode'] as $key) if (trim((string)($body[$key]??''))==='') json(['ok'=>false,'msg'=>'Please complete all required address fields.'],422);
+    $isDefault=!empty($body['is_default']); if($isDefault) Database::query("UPDATE user_addresses SET is_default=0 WHERE user_id=?",[(int)$user['id']]);
+    $id=Database::insert("INSERT INTO user_addresses (user_id,label,business_name,address_line1,address_line2,city,state,pincode,is_default,created_at) VALUES (?,?,?,?,?,?,?,?,?,NOW())",[
+        (int)$user['id'], trim((string)($body['label']??'Address'))?:'Address', trim((string)($body['business_name']??'')),
+        trim((string)$body['address_line1']), trim((string)($body['address_line2']??'')), trim((string)$body['city']),
+        trim((string)$body['state']), trim((string)$body['pincode']), $isDefault?1:0
+    ]);
+    json(['ok'=>true,'id'=>(int)$id]);
+}
+if (preg_match('#^/api/profile/addresses/(\d+)$#',$uri,$m) && $method==='DELETE') {
+    \Auth\Auth::require(); $user=\Auth\Auth::user(); $ensureUserAddresses(); Database::query("DELETE FROM user_addresses WHERE id=? AND user_id=?",[(int)$m[1],(int)$user['id']]); json(['ok'=>true]);
 }
 
 if ($uri === '/api/profile' && in_array($method, ['POST', 'PUT'], true)) {
@@ -174,6 +193,7 @@ if (preg_match('#^/api/design-approvals/(\d+)/artwork$#', $uri, $m) && $method =
         'note' => $canInitialUpload ? 'Customer uploaded artwork after selecting upload later.' : 'Customer reuploaded artwork.',
     ]);
     \Orders\OrderManager::markCustomerUpdate((int)$approval['order_id'], $canInitialUpload ? 'customer_artwork_uploaded' : 'customer_artwork_reuploaded');
+    \Orders\OrderManager::clearAdminUpdate((int)$approval['order_id']);
     \Orders\OrderManager::syncOrderDesignApproved((int)$approval['order_id']);
     json([
         'ok' => true,
@@ -189,6 +209,36 @@ if (preg_match('#^/api/design-approvals/(\d+)/artwork$#', $uri, $m) && $method =
             'download_url' => '/account/artwork/' . (int)$fileId . '/download',
         ],
     ]);
+}
+
+if (preg_match('#^/api/orders/(\d+)/admin-update/ack$#', $uri, $m) && $method === 'POST') {
+    \Auth\Auth::require();
+    $user = \Auth\Auth::user();
+    $order = Database::row("SELECT id, admin_update_type FROM orders WHERE id=? AND user_id=? LIMIT 1", [(int)$m[1], (int)$user['id']]);
+    if (!$order) json(['ok' => false, 'msg' => 'Order not found.'], 404);
+    if (in_array((string)($order['admin_update_type'] ?? ''), ['order_status_updated', 'admin_design_approved', 'invoice_uploaded', 'shipping_updated'], true)) \Orders\OrderManager::clearAdminUpdate((int)$order['id']);
+    json(['ok' => true]);
+}
+
+if (preg_match('#^/api/orders/(\d+)/cancel$#', $uri, $m) && $method === 'POST') {
+    \Auth\Auth::require();
+    $user = \Auth\Auth::user();
+    $db = Database::get();
+    try {
+        $db->beginTransaction();
+        $order = Database::row("SELECT id, status FROM orders WHERE id=? AND user_id=? FOR UPDATE", [(int)$m[1], (int)$user['id']]);
+        if (!$order) { $db->rollBack(); json(['ok'=>false,'msg'=>'Order not found.'], 404); }
+        $allowed = ['new_order','received','whatsapp_pending','design_approved'];
+        if (!in_array((string)$order['status'], $allowed, true)) { $db->rollBack(); json(['ok'=>false,'msg'=>'This order can no longer be cancelled because printing or processing has started.'], 422); }
+        $reason = trim((string)($body['reason'] ?? '')) ?: 'Cancelled by customer.';
+        Database::query("UPDATE orders SET status='cancelled', customer_update_pending=1, customer_update_type='customer_cancelled', customer_update_at=NOW(), updated_at=NOW() WHERE id=?", [(int)$order['id']]);
+        Database::insert("INSERT INTO order_status_history (order_id,status,note,created_by,created_at) VALUES (?,'cancelled',?,'customer',NOW())", [(int)$order['id'], $reason]);
+        $db->commit();
+        json(['ok'=>true,'status'=>'cancelled','msg'=>'Order cancelled successfully.']);
+    } catch (\Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        json(['ok'=>false,'msg'=>'Could not cancel this order. Please try again.'], 500);
+    }
 }
 
 
@@ -221,6 +271,10 @@ if ($uri === '/api/custom-quotes' && $method === 'POST') {
             sent_at DATETIME NULL,
             payment_link_generated_at DATETIME NULL,
             approved_at DATETIME NULL,
+            is_seen TINYINT(1) NOT NULL DEFAULT 0,
+            customer_update_pending TINYINT(1) NOT NULL DEFAULT 0,
+            customer_update_type VARCHAR(80) NULL,
+            customer_update_at DATETIME NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
             KEY idx_custom_quote_status (status, created_at),
@@ -239,6 +293,10 @@ if ($uri === '/api/custom-quotes' && $method === 'POST') {
             "ALTER TABLE custom_quote_requests ADD COLUMN sent_at DATETIME NULL AFTER payment_status",
             "ALTER TABLE custom_quote_requests ADD COLUMN payment_link_generated_at DATETIME NULL AFTER sent_at",
             "ALTER TABLE custom_quote_requests ADD COLUMN approved_at DATETIME NULL AFTER payment_link_generated_at",
+            "ALTER TABLE custom_quote_requests ADD COLUMN is_seen TINYINT(1) NOT NULL DEFAULT 0 AFTER approved_at",
+            "ALTER TABLE custom_quote_requests ADD COLUMN customer_update_pending TINYINT(1) NOT NULL DEFAULT 0 AFTER is_seen",
+            "ALTER TABLE custom_quote_requests ADD COLUMN customer_update_type VARCHAR(80) NULL AFTER customer_update_pending",
+            "ALTER TABLE custom_quote_requests ADD COLUMN customer_update_at DATETIME NULL AFTER customer_update_type",
         ] as $sql) { try { Database::query($sql); } catch (\Throwable) {} }
         try { Database::query("ALTER TABLE custom_quote_requests DROP COLUMN estimated_delivery"); } catch (\Throwable) {}
     } catch (\Throwable $e) {
@@ -500,7 +558,7 @@ if ($uri === '/api/payment/create-order' && $method === 'POST') {
     if (!$ensure['ok']) json($ensure, 400);
     $items  = \Cart\Cart::get();
     $customQuoteId=(int)($body['custom_quote_id'] ?? 0); if($customQuoteId)$items=array_values(array_filter($items,static fn($item)=>(int)($item['custom_quote_id']??0)===$customQuoteId));
-    $coupon = $body['coupon_code'] ?? null;
+    $coupon = $customQuoteId > 0 ? null : ($body['coupon_code'] ?? null);
     $totals = \Cart\Cart::totals($items, $coupon);
 
     if ($totals['total'] <= 0) json(['ok' => false, 'msg' => 'Invalid order total']);
@@ -534,7 +592,7 @@ if ($uri === '/api/payment/verify' && $method === 'POST') {
 
     // 1) Place order first (records in DB)
     $placeResult = \Orders\OrderManager::place([
-        'coupon_code'    => $body['coupon_code'] ?? null,
+        'coupon_code'    => (int)($body['custom_quote_id'] ?? 0) > 0 ? null : ($body['coupon_code'] ?? null),
         'payment_method' => 'razorpay',
         'payment_status' => 'pending',
         'billing'        => $body['billing'] ?? null,

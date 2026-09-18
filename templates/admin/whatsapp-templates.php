@@ -142,6 +142,7 @@ $placeholders = [
     'login_identifier' => 'Customer login email / mobile',
     'login_password' => 'Customer login password',
     'payment_link' => 'Custom order payment link',
+    'custom_cart_url' => 'Custom order cart / checkout link',
 ];
 ?>
 <div class="wa-template-page">
