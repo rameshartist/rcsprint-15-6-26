@@ -527,9 +527,12 @@ if ($uri === '/profile' && $method === 'GET') {
         (string)($order['order_type'] ?? 'normal') !== 'custom' && (int)($order['custom_quote_id'] ?? 0) === 0
     ));
     $customFulfillmentOrders = array_values(array_filter($allOrders, static fn(array $order): bool =>
-        (string)($order['order_type'] ?? 'normal') === 'custom' || (int)($order['custom_quote_id'] ?? 0) > 0
+        ((string)($order['order_type'] ?? 'normal') === 'custom' || (int)($order['custom_quote_id'] ?? 0) > 0)
+        && (string)($order['payment_status'] ?? '') === 'paid'
     ));
-    try { $customOrders=Database::rows("SELECT * FROM custom_quote_requests WHERE user_id=? ORDER BY created_at DESC",[(int)$user['id']]); } catch (\Throwable) { $customOrders=[]; }
+    // A quote remains in the cart/quote workflow until payment is captured. Only
+    // confirmed paid custom orders belong in the customer's order history.
+    try { $customOrders=Database::rows("SELECT * FROM custom_quote_requests WHERE user_id=? AND payment_status='paid' AND status IN ('paid','converted_to_order') AND order_id IS NOT NULL ORDER BY created_at DESC",[(int)$user['id']]); } catch (\Throwable) { $customOrders=[]; }
     $reviewableItems = \Reviews\ProductReview::reviewableItemsForUser((int)$user['id']);
     $myReviews = \Reviews\ProductReview::userReviews((int)$user['id']);
     $wishlistItems = \Wishlist\Wishlist::itemsForUser((int)$user['id']);

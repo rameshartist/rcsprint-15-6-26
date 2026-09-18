@@ -830,7 +830,9 @@ const linkedOrder = getOrderKeyFromHash();
 if (linkedOrder) {
   storeAccountOrderOpen(linkedOrder, true);
 }
-const initialAccountTab = getAccountTabFromHash() || ((linkedOrder || rememberedOrder) ? (sessionStorage.getItem(ACCOUNT_OPEN_TAB_KEY) || 'orders') : 'dashboard');
+// A plain /profile visit always opens Dashboard; the URL hash preserves the
+// selected section across refreshes and direct links.
+const initialAccountTab = getAccountTabFromHash() || 'dashboard';
 setAccountTab(initialAccountTab, false);
 restoreOpenAccountOrders(Boolean(linkedOrder));
 window.addEventListener('load', () => restoreOpenAccountOrders(Boolean(getOrderKeyFromHash())));

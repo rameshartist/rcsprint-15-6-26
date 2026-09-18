@@ -15,7 +15,7 @@ $adminRoleLabel = $isSuperAdmin ? 'Super Admin' : 'Admin';
 $adminNewOrderCount = 0;
 try { $adminNewOrderCount = (int)(Database::row("SELECT COUNT(*) AS c FROM orders WHERE status='new_order' AND COALESCE(is_seen,0)=0")['c'] ?? 0); } catch (\Throwable) {}
 $adminNewCustomCount = 0;
-try { $adminNewCustomCount = (int)(Database::row("SELECT COUNT(*) AS c FROM custom_quote_requests WHERE COALESCE(is_seen,0)=0")['c'] ?? 0); } catch (\Throwable) {}
+try { $adminNewCustomCount = (int)(Database::row("SELECT COUNT(*) AS c FROM custom_quote_requests WHERE status='new' AND COALESCE(is_seen,0)=0")['c'] ?? 0); } catch (\Throwable) {}
 ?>
 <link rel="stylesheet" href="/assets/css/app.css?v=<?= (int)$adminAppCssVersion ?>">
 <link rel="stylesheet" href="/assets/css/admin.css?v=<?= (int)$adminCssVersion ?>">
@@ -144,6 +144,16 @@ try { $adminNewCustomCount = (int)(Database::row("SELECT COUNT(*) AS c FROM cust
           }
         });
       }
+
+      // Keep admin data current without interrupting an active edit or modal.
+      window.setInterval(function () {
+        if (document.visibilityState !== 'visible') return;
+        const active = document.activeElement;
+        if (active && active.matches('input, textarea, select, [contenteditable="true"]')) return;
+        if (document.querySelector('.open[role="dialog"], dialog[open], .adm-modal.open, .custom-quote-modal.open')) return;
+        if (typeof window.adminAutoRefresh === 'function') window.adminAutoRefresh();
+        else window.location.reload();
+      }, 60000);
     })();
     </script>
 

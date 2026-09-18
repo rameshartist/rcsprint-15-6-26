@@ -1909,15 +1909,19 @@ if (str_starts_with($uri, '/admin/api/')) {
                 LEFT JOIN users u ON u.id = cqr.user_id
                 ORDER BY cqr.created_at DESC, cqr.id DESC
                 LIMIT 300");
-            $counts = ['all'=>count($rows),'new'=>0,'reviewing'=>0,'sent_to_customer'=>0,'customer_approved'=>0,'payment_pending'=>0,'converted_to_order'=>0,'rejected'=>0];
+            $counts = ['all'=>0,'new'=>0,'reviewing'=>0,'sent_to_customer'=>0,'customer_approved'=>0,'payment_pending'=>0,'converted_to_order'=>0,'rejected'=>0];
+            $updateCounts = ['new'=>0,'converted_to_order'=>0];
             foreach ($rows as $row) {
                 $st = (string)($row['status'] ?? 'new');
                 if ($st === 'paid') $st = 'converted_to_order';
                 if (array_key_exists($st, $counts)) $counts[$st]++;
+                if (!in_array($st, ['rejected','closed'], true)) $counts['all']++;
+                if ($st === 'new' && (int)($row['is_seen'] ?? 0) === 0) $updateCounts['new']++;
+                if ($st === 'converted_to_order' && (int)($row['customer_update_pending'] ?? 0) === 1) $updateCounts['converted_to_order']++;
             }
             $unseen = (int)(Database::row("SELECT COUNT(*) AS c FROM custom_quote_requests WHERE is_seen=0")['c'] ?? 0);
             Database::query("UPDATE custom_quote_requests SET is_seen=1 WHERE is_seen=0");
-            json(['ok'=>true,'quotes'=>$rows,'counts'=>$counts,'unseen'=>$unseen]);
+            json(['ok'=>true,'quotes'=>$rows,'counts'=>$counts,'unseen'=>$unseen,'update_counts'=>$updateCounts]);
         } catch (\Throwable $e) {
             json(['ok'=>false,'msg'=>'Could not load custom orders','quotes'=>[],'counts'=>[]], 500);
         }
@@ -1928,6 +1932,12 @@ if (str_starts_with($uri, '/admin/api/')) {
         $status = trim((string)($body['status'] ?? 'new'));
         if (!in_array($status, $allowed, true)) json(['ok'=>false,'msg'=>'Invalid status'], 422);
         try {
+            $existing = Database::row("SELECT payment_status,order_id FROM custom_quote_requests WHERE id=? LIMIT 1", [(int)$m[1]]);
+            if (!$existing) json(['ok'=>false,'msg'=>'Custom quote not found'], 404);
+            if (in_array($status, ['paid','converted_to_order'], true) && ((string)($existing['payment_status'] ?? '') !== 'paid' || (int)($existing['order_id'] ?? 0) < 1)) {
+                Database::query("UPDATE custom_quote_requests SET status='payment_pending',payment_status='payment_pending',updated_at=NOW() WHERE id=?", [(int)$m[1]]);
+                json(['ok'=>false,'msg'=>'Payment is still pending. The custom order remains in Payment Pending.'], 422);
+            }
             $timestampSql = '';
             if ($status === 'sent_to_customer') {
                 $timestampSql .= ', sent_at=COALESCE(sent_at, NOW())';
@@ -1947,7 +1957,7 @@ if (str_starts_with($uri, '/admin/api/')) {
                 $status,
                 ($body['quoted_amount'] ?? '') !== '' && ($body['quoted_amount'] ?? null) !== null ? (float)$body['quoted_amount'] : null,
                 trim((string)($body['quote_note'] ?? '')),
-                trim((string)($body['payment_status'] ?? 'not_required')) ?: 'not_required',
+                (string)($existing['payment_status'] ?? 'not_required'),
                 (int)$m[1],
             ]);
             json(['ok'=>true]);
@@ -2021,6 +2031,12 @@ if (str_starts_with($uri, '/admin/api/')) {
         $status = trim((string)($body['status'] ?? ''));
         if (!in_array($status, $allowed, true)) json(['ok'=>false,'msg'=>'Invalid status'], 422);
         try {
+            $existing = Database::row("SELECT payment_status,order_id FROM custom_quote_requests WHERE id=? LIMIT 1", [(int)$m[1]]);
+            if (!$existing) json(['ok'=>false,'msg'=>'Custom quote not found'], 404);
+            if (in_array($status, ['paid','converted_to_order'], true) && ((string)($existing['payment_status'] ?? '') !== 'paid' || (int)($existing['order_id'] ?? 0) < 1)) {
+                Database::query("UPDATE custom_quote_requests SET status='payment_pending',payment_status='payment_pending',updated_at=NOW() WHERE id=?", [(int)$m[1]]);
+                json(['ok'=>false,'msg'=>'Payment is still pending. The custom order remains in Payment Pending.'], 422);
+            }
             $timestampSql = '';
             if ($status === 'sent_to_customer') {
                 $timestampSql .= ', sent_at=COALESCE(sent_at, NOW())';
