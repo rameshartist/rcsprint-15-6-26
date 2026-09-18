@@ -688,7 +688,7 @@ if ($uri === '/contact' && $method === 'GET') {
 
 
 // Dedicated custom cart and checkout links. Custom quotes never mix with the normal cart checkout.
-if (preg_match('#^/(custom-cart|custom-checkout)/([A-Za-z0-9_-]{24,120})$#', $uri, $m) && $method === 'GET') {
+if (preg_match('#^/(custom-cart|custom-checkout)/([A-Za-z0-9._~-]{16,160})/?$#', $uri, $m) && $method === 'GET') {
     $mode=$m[1]; $token=$m[2];
     try { $quote=Database::row("SELECT * FROM custom_quote_requests WHERE quote_token=? LIMIT 1",[$token]);
         if(!$quote || (float)($quote['quoted_amount']??0)<=0 || in_array((string)($quote['status']??''),['converted_to_order','closed','rejected'],true)){http_response_code(404);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>'This custom order link is no longer available.'],'settingsMap'=>[]]);exit;}
@@ -696,7 +696,9 @@ if (preg_match('#^/(custom-cart|custom-checkout)/([A-Za-z0-9_-]{24,120})$#', $ur
         $user=\Auth\Auth::user(); if((int)($quote['user_id']??0)!==(int)$user['id']){http_response_code(403);view('info-page',['page'=>['title'=>'Account required','intro'=>'Please login with the account linked to this custom order.'],'settingsMap'=>[]]);exit;}
         $added=\Cart\Cart::addCustomQuote($quote,(int)$user['id']); if(!($added['ok']??false)){http_response_code(422);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>$added['msg']??'Please contact us.'],'settingsMap'=>[]]);exit;}
         $cartItems=array_values(array_filter(\Cart\Cart::get(),static fn($item)=>(int)($item['custom_quote_id']??0)===(int)$quote['id']));$totals=\Cart\Cart::totals($cartItems);
-        if($mode==='custom-cart') redirect('/custom-checkout/'.rawurlencode($token));
+        // The WhatsApp link is intentionally a cart link: let the customer
+        // review the persistent quote before continuing to its checkout.
+        if($mode==='custom-cart') redirect('/cart');
         $isCustomCheckout=true;view('checkout',compact('quote','cartItems','totals','user','token','isCustomCheckout'));exit;
     }catch(\Throwable $e){error_log($e->getMessage());http_response_code(500);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>'Please try again later.'],'settingsMap'=>[]]);exit;}
 }

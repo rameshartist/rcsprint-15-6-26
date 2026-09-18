@@ -2005,8 +2005,14 @@ if (str_starts_with($uri, '/admin/api/')) {
             if ((string)($quote['status'] ?? '') !== 'customer_approved') json(['ok'=>false,'msg'=>'Mark this quote approved before generating the payment link.'], 422);
             if (empty($quote['user_id'])) json(['ok'=>false,'msg'=>'Create or link the customer account before generating the payment link.'], 422);
             if ((float)($quote['quoted_amount'] ?? 0) <= 0) json(['ok'=>false,'msg'=>'Please save quoted amount before generating payment link.'], 422);
-            $token = trim((string)($quote['quote_token'] ?? '')) ?: bin2hex(random_bytes(24));
+            $token = trim((string)($quote['quote_token'] ?? ''));
+            if (!preg_match('/^[A-Za-z0-9._~-]{16,160}$/', $token)) $token = bin2hex(random_bytes(24));
             Database::query("UPDATE custom_quote_requests SET quote_token=?, status='payment_pending', payment_status='payment_pending', payment_link_generated_at=COALESCE(payment_link_generated_at, NOW()), updated_at=NOW() WHERE id=?", [$token, (int)$m[1]]);
+            $quote['quote_token'] = $token;
+            $quote['status'] = 'payment_pending';
+            $quote['payment_status'] = 'payment_pending';
+            $cartResult = \Cart\Cart::addCustomQuote($quote, (int)$quote['user_id']);
+            if (!($cartResult['ok'] ?? false)) json(['ok'=>false,'msg'=>$cartResult['msg'] ?? 'Could not add custom order to the customer cart.'], 422);
             $base = rtrim((defined('APP_URL') ? (string)APP_URL : ''), '/'); if ($base === '') { $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http'; $base = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? ''); }
             json(['ok'=>true,'link'=>$base . '/custom-cart/' . rawurlencode($token),'token'=>$token,'status'=>'payment_pending']);
         } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not generate payment link: ' . $e->getMessage()], 500); }

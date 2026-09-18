@@ -470,8 +470,8 @@ class OrderManager
 
                 if (!empty($item['custom_quote_id'])) {
                     \Database::query(
-                        "UPDATE custom_quote_requests SET payment_status=?, status=?, order_id=?, updated_at=NOW() WHERE id=? AND (order_id IS NULL OR order_id=?)",
-                        [($params['payment_status'] ?? 'pending') === 'paid' ? 'paid' : 'payment_pending', ($params['payment_status'] ?? 'pending') === 'paid' ? 'converted_to_order' : 'payment_pending', $dbOrderId, (int)$item['custom_quote_id'], $dbOrderId]
+                        "UPDATE custom_quote_requests SET payment_status=?, status=?, order_id=?, updated_at=NOW() WHERE id=? AND payment_status<>'paid'",
+                        [($params['payment_status'] ?? 'pending') === 'paid' ? 'paid' : 'payment_pending', ($params['payment_status'] ?? 'pending') === 'paid' ? 'converted_to_order' : 'payment_pending', $dbOrderId, (int)$item['custom_quote_id']]
                     );
                 }
 
@@ -527,7 +527,9 @@ class OrderManager
 
         // Non-critical operations after commit should not fail checkout.
         try {
-            \Cart\Cart::clear($onlyCustomQuoteId ?: null);
+            // A custom quote must survive failed/abandoned payment attempts.
+            // Razorpay::handleSuccess removes it only after capture is verified.
+            if (!$onlyCustomQuoteId) \Cart\Cart::clear();
         } catch (\Throwable $e) {
             error_log('Order placed but cart clear failed: ' . $e->getMessage());
         }
