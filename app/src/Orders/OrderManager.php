@@ -173,6 +173,8 @@ class OrderManager
 
     public static function ensureCustomerUpdateSchema(): bool
     {
+        static $ready = false;
+        if ($ready) return true;
         try {
             $hasPending = \Database::row(
                 "SELECT 1 AS ok
@@ -207,7 +209,16 @@ class OrderManager
             if (!$hasAt) {
                 \Database::query("ALTER TABLE orders ADD COLUMN customer_update_at DATETIME NULL AFTER customer_update_type");
             }
+            foreach ([
+                "ALTER TABLE orders ADD COLUMN admin_update_pending TINYINT(1) NOT NULL DEFAULT 0 AFTER customer_update_at",
+                "ALTER TABLE orders ADD COLUMN admin_update_type VARCHAR(80) NULL AFTER admin_update_pending",
+                "ALTER TABLE orders ADD COLUMN admin_update_at DATETIME NULL AFTER admin_update_type",
+                "ALTER TABLE orders ADD COLUMN refund_requested_at DATETIME NULL AFTER admin_update_at",
+                "ALTER TABLE orders ADD COLUMN refund_request_note TEXT NULL AFTER refund_requested_at",
+            ] as $sql) { try { \Database::query($sql); } catch (\Throwable) {} }
             try { \Database::query("CREATE INDEX idx_orders_customer_update ON orders (customer_update_pending, customer_update_at)"); } catch (\Throwable) {}
+            try { \Database::query("CREATE INDEX idx_orders_admin_update ON orders (admin_update_pending, admin_update_at)"); } catch (\Throwable) {}
+            $ready = true;
             return true;
         } catch (\Throwable $e) {
             error_log('Order customer update schema unavailable: ' . $e->getMessage());
@@ -291,6 +302,18 @@ class OrderManager
         );
     }
 
+    public static function markAdminUpdate(int $orderId, string $type): void
+    {
+        if ($orderId <= 0 || !self::ensureCustomerUpdateSchema()) return;
+        \Database::query("UPDATE orders SET admin_update_pending=1, admin_update_type=?, admin_update_at=NOW(), updated_at=NOW() WHERE id=?", [substr($type, 0, 80), $orderId]);
+    }
+
+    public static function clearAdminUpdate(int $orderId): void
+    {
+        if ($orderId <= 0 || !self::ensureCustomerUpdateSchema()) return;
+        \Database::query("UPDATE orders SET admin_update_pending=0, admin_update_type=NULL, admin_update_at=NULL, updated_at=NOW() WHERE id=?", [$orderId]);
+    }
+
     public static function recordDesignEvent(array $event): bool
     {
         if (!self::ensureDesignEventSchema()) return false;
@@ -365,7 +388,8 @@ class OrderManager
         if ($onlyCustomQuoteId) $cartItems = array_values(array_filter($cartItems, static fn($item) => (int)($item['custom_quote_id'] ?? 0) === $onlyCustomQuoteId));
         if (empty($cartItems)) return ['ok' => false, 'msg' => 'Cart is empty'];
 
-        $couponCode = $params['coupon_code'] ?? null;
+        // An approved custom quote has a fixed payable amount and must never receive cart coupons.
+        $couponCode = $onlyCustomQuoteId > 0 ? null : ($params['coupon_code'] ?? null);
         $totals = \Cart\Cart::totals($cartItems, $couponCode);
         $billing = self::sanitizeBilling($params['billing'] ?? null);
         $shipping = self::sanitizeShipping($params['shipping'] ?? null);
@@ -448,8 +472,8 @@ class OrderManager
 
                 if (!empty($item['custom_quote_id'])) {
                     \Database::query(
-                        "UPDATE custom_quote_requests SET payment_status=?, status=?, order_id=?, updated_at=NOW() WHERE id=? AND (order_id IS NULL OR order_id=?)",
-                        [($params['payment_status'] ?? 'pending') === 'paid' ? 'paid' : 'payment_pending', ($params['payment_status'] ?? 'pending') === 'paid' ? 'converted_to_order' : 'payment_pending', $dbOrderId, (int)$item['custom_quote_id'], $dbOrderId]
+                        "UPDATE custom_quote_requests SET payment_status=?, status=?, order_id=?, updated_at=NOW() WHERE id=? AND payment_status<>'paid'",
+                        [($params['payment_status'] ?? 'pending') === 'paid' ? 'paid' : 'payment_pending', ($params['payment_status'] ?? 'pending') === 'paid' ? 'converted_to_order' : 'payment_pending', $dbOrderId, (int)$item['custom_quote_id']]
                     );
                 }
 
@@ -505,7 +529,9 @@ class OrderManager
 
         // Non-critical operations after commit should not fail checkout.
         try {
-            \Cart\Cart::clear($onlyCustomQuoteId ?: null);
+            // A custom quote must survive failed/abandoned payment attempts.
+            // Razorpay::handleSuccess removes it only after capture is verified.
+            if (!$onlyCustomQuoteId) \Cart\Cart::clear();
         } catch (\Throwable $e) {
             error_log('Order placed but cart clear failed: ' . $e->getMessage());
         }
@@ -541,6 +567,7 @@ class OrderManager
         );
         if ($actor !== 'system') {
             self::clearCustomerUpdate($orderId);
+            self::markAdminUpdate($orderId, 'order_status_updated');
         }
 
         \Database::insert(
@@ -652,6 +679,10 @@ class OrderManager
         ]);
         if ($admin) {
             self::clearCustomerUpdate((int)$approval['order_id']);
+            if (in_array($status, ['issue_found', 'proof_uploaded', 'approved'], true)) {
+                $updateType = match ($status) { 'proof_uploaded' => 'admin_proof_uploaded', 'issue_found' => 'admin_issue_marked', default => 'admin_design_approved' };
+                self::markAdminUpdate((int)$approval['order_id'], $updateType);
+            }
         }
 
         self::syncOrderDesignApproved((int)$approval['order_id']);
@@ -701,6 +732,7 @@ class OrderManager
                 'note' => $note,
             ]);
             self::markCustomerUpdate((int)$approval['order_id'], 'customer_design_approved');
+            self::clearAdminUpdate((int)$approval['order_id']);
             self::syncOrderDesignApproved((int)$approval['order_id']);
             return ['ok' => true, 'msg' => 'Design approved successfully.'];
         }
@@ -730,6 +762,7 @@ class OrderManager
                 'note' => $note,
             ]);
             self::markCustomerUpdate((int)$approval['order_id'], 'customer_revision_requested');
+            self::clearAdminUpdate((int)$approval['order_id']);
             return ['ok' => true, 'msg' => 'Revision request sent to admin.'];
         }
 
@@ -814,6 +847,7 @@ class OrderManager
 
     public static function getUserOrders(int $userId): array
     {
+        self::ensureCustomerUpdateSchema();
         self::ensureDesignApprovalSchema();
         self::ensureInvoiceSchema();
 
@@ -919,6 +953,9 @@ class OrderManager
     {
         if (!$save || !$shipping || $userId <= 0) return;
         try {
+            \Database::query("CREATE TABLE IF NOT EXISTS user_addresses (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id INT UNSIGNED NOT NULL,label VARCHAR(80) NOT NULL DEFAULT 'Address',business_name VARCHAR(180) NULL,address_line1 VARCHAR(255) NOT NULL,address_line2 VARCHAR(255) NULL,city VARCHAR(120) NOT NULL,state VARCHAR(120) NOT NULL,pincode VARCHAR(20) NOT NULL,is_default TINYINT(1) NOT NULL DEFAULT 0,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,KEY idx_user_addresses_user (user_id,is_default,id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            \Database::query("UPDATE user_addresses SET is_default=0 WHERE user_id=?", [$userId]);
+            \Database::insert("INSERT INTO user_addresses (user_id,label,business_name,address_line1,address_line2,city,state,pincode,is_default,created_at) VALUES (?,'Checkout',?,?,?,?,?,?,1,NOW())", [$userId,$shipping['business_name']??'',$shipping['address_line1']??'',$shipping['address_line2']??'',$shipping['city']??'',$shipping['state']??'',$shipping['pincode']??'']);
             \Database::query(
                 "UPDATE users
                  SET shipping_address_line1 = ?, shipping_address_line2 = ?, shipping_city = ?, shipping_state = ?, shipping_pincode = ?, profile_updated_at = NOW()

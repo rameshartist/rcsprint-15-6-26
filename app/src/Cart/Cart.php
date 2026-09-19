@@ -111,7 +111,9 @@ class Cart
     {
         self::ensureCustomQuoteSchema();
         $quoteId = (int)($quote['id'] ?? 0);
-        $amount = (float)($quote['quoted_amount'] ?? 0);
+        $baseAmount = (float)($quote['quoted_amount'] ?? 0);
+        $designFee = max(0, (float)($quote['design_fee'] ?? 0));
+        $amount = $baseAmount + $designFee;
         if ($quoteId <= 0) return ['ok' => false, 'msg' => 'Invalid custom quote.'];
         if ($amount <= 0) return ['ok' => false, 'msg' => 'Quote amount is not ready yet.'];
         if (in_array((string)($quote['status'] ?? ''), ['converted_to_order','closed','rejected'], true)) {
@@ -134,7 +136,8 @@ class Cart
             'design_brief' => (string)($quote['instructions'] ?? ''),
             'notes' => (string)($quote['quote_note'] ?? ''),
             'price_breakdown' => json_encode([
-                'base_price' => $amount,
+                'base_price' => $baseAmount,
+                'design_fee' => $designFee,
                 'custom_quote_id' => $quoteId,
                 'request_code' => (string)($quote['request_code'] ?? ''),
                 'requested_quantity' => (string)($quote['quantity'] ?? ''),
@@ -179,14 +182,22 @@ class Cart
 
         if ($userId) {
             $item = \Database::row(
-                "SELECT ci.id FROM cart_items ci
+                "SELECT ci.id, ci.item_type FROM cart_items ci
                  JOIN carts c ON ci.cart_id = c.id
                  WHERE ci.id = ? AND c.user_id = ?",
                 [$itemId, $userId]
             );
             if (!$item) return ['ok' => false, 'msg' => 'Item not found'];
+            if (($item['item_type'] ?? 'product') === 'custom_quote') {
+                return ['ok' => false, 'msg' => 'A custom order stays in your cart until its payment is completed.'];
+            }
             \Database::query("DELETE FROM cart_items WHERE id = ?", [$itemId]);
         } else {
+            foreach (($_SESSION['cart'] ?? []) as $item) {
+                if (($item['id'] ?? '') === $itemId && ($item['item_type'] ?? 'product') === 'custom_quote') {
+                    return ['ok' => false, 'msg' => 'A custom order stays in your cart until its payment is completed.'];
+                }
+            }
             $_SESSION['cart'] = array_filter(
                 $_SESSION['cart'] ?? [],
                 fn($i) => $i['id'] !== $itemId
@@ -312,10 +323,12 @@ class Cart
         if ($userId) {
             $cart = \Database::row("SELECT id FROM carts WHERE user_id = ?", [$userId]);
             if ($cart) {
-                \Database::query($customQuoteId ? "DELETE FROM cart_items WHERE cart_id=? AND custom_quote_id=?" : "DELETE FROM cart_items WHERE cart_id=?", $customQuoteId ? [$cart['id'], $customQuoteId] : [$cart['id']]);
+                \Database::query($customQuoteId ? "DELETE FROM cart_items WHERE cart_id=? AND custom_quote_id=?" : "DELETE FROM cart_items WHERE cart_id=? AND COALESCE(item_type,'product')<>'custom_quote'", $customQuoteId ? [$cart['id'], $customQuoteId] : [$cart['id']]);
             }
         } else {
-            $_SESSION['cart'] = [];
+            $_SESSION['cart'] = $customQuoteId
+                ? array_values(array_filter($_SESSION['cart'] ?? [], static fn($item) => (int)($item['custom_quote_id'] ?? 0) !== $customQuoteId))
+                : array_values(array_filter($_SESSION['cart'] ?? [], static fn($item) => ($item['item_type'] ?? 'product') === 'custom_quote'));
         }
     }
 

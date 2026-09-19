@@ -10,6 +10,9 @@ $cartGstPct = (float)($totals['gst_pct'] ?? 18);
 $cartGstAmt = (float)($totals['gst_amt'] ?? 0);
 $cartShipping = (float)($totals['shipping'] ?? 0);
 $cartTotal = (float)($totals['total'] ?? 0);
+$customQuoteItems = array_values(array_filter($cartItems ?? [], static fn($item): bool => ($item['item_type'] ?? 'product') === 'custom_quote'));
+$customCheckoutToken = $customQuoteItems ? trim((string)($customQuoteItems[0]['custom_quote_token'] ?? '')) : '';
+$checkoutUrl = $customCheckoutToken !== '' ? '/custom-checkout/' . rawurlencode($customCheckoutToken) : '/checkout';
 ?>
 <div class="cartp-wrap">
   <div class="container cartp-page">
@@ -99,9 +102,13 @@ $cartTotal = (float)($totals['total'] ?? 0);
             <strong>₹<?= number_format($lineTotal) ?></strong>
             <?php if ($designFee > 0): ?><small>Includes ₹<?= number_format($designFee) ?> design fee</small><?php endif; ?>
           </div>
-          <button class="cartp-del" onclick="removeCartItem('<?= htmlspecialchars($itemId, ENT_QUOTES) ?>')" aria-label="Remove <?= htmlspecialchars($item['product_name'] ?? 'item', ENT_QUOTES) ?>">
-            <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
-          </button>
+          <?php if ($isCustomQuote): ?>
+            <span class="cartp-fixed-qty" title="Custom orders remain in cart until payment">Payment pending</span>
+          <?php else: ?>
+            <button class="cartp-del" onclick="removeCartItem('<?= htmlspecialchars($itemId, ENT_QUOTES) ?>')" aria-label="Remove <?= htmlspecialchars($item['product_name'] ?? 'item', ENT_QUOTES) ?>">
+              <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+            </button>
+          <?php endif; ?>
         </article>
         <?php endforeach; ?>
 
@@ -119,7 +126,7 @@ $cartTotal = (float)($totals['total'] ?? 0);
           <div class="r"><span>GST (<span id="cartSummaryGstPct"><?= htmlspecialchars((string)$cartGstPct, ENT_QUOTES, 'UTF-8') ?></span>%)</span><strong id="cartSummaryGst">₹<?= number_format($cartGstAmt) ?></strong></div>
           <div class="r"><span>Shipping</span><strong id="cartSummaryShipping" class="<?= $cartShipping > 0 ? '' : 'is-free' ?>"><?= $cartShipping > 0 ? '₹' . number_format($cartShipping) : 'Free' ?></strong></div>
           <div class="rt"><span>Total</span><strong id="cartSummaryTotal">₹<?= number_format($cartTotal) ?></strong></div>
-          <a href="/checkout" class="cartp-checkout">Proceed to Checkout <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          <a href="<?= htmlspecialchars($checkoutUrl, ENT_QUOTES) ?>" class="cartp-checkout">Proceed to Checkout <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
           <div class="cartp-secure"><i class="fa-solid fa-lock" aria-hidden="true"></i> Secure Checkout</div>
         </div>
 
