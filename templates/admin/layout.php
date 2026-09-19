@@ -17,7 +17,7 @@ try { $adminNewOrderCount = (int)(Database::row("SELECT COUNT(*) AS c FROM order
 $adminNewCustomCount = 0;
 try { $adminNewCustomCount = (int)(Database::row("SELECT COUNT(*) AS c FROM custom_quote_requests WHERE status='new'")['c'] ?? 0); } catch (\Throwable) {}
 $adminNewLeadCount = 0;
-try { $adminNewLeadCount = (int)(Database::row("SELECT COUNT(*) AS c FROM contact_leads WHERE status='new'")['c'] ?? 0); } catch (\Throwable) {}
+try { $adminNewLeadCount = (int)(Database::row("SELECT COUNT(*) AS c FROM contact_leads WHERE COALESCE(is_read,0)=0")['c'] ?? 0); } catch (\Throwable) {}
 $adminPendingApprovalCount = 0;
 if ($isSuperAdmin) foreach (['products','categories','coupons','home_deals'] as $approvalTable) {
   try { $adminPendingApprovalCount += (int)(Database::row("SELECT COUNT(*) AS c FROM {$approvalTable} WHERE approval_status='pending'")['c'] ?? 0); } catch (\Throwable) {}
