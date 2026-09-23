@@ -28,6 +28,8 @@ $navWa       = htmlspecialchars($bizSettings['biz_whatsapp']     ?? '91987654321
 $navRazKey   = htmlspecialchars($bizSettings['razorpay_key_id']  ?? '');
 $navGst      = (int)($bizSettings['gst_percent'] ?? 18);
 $navDesignFee= (float)($bizSettings['design_fee'] ?? 0);
+try { $siteChrome = \Site\SiteChromeManager::payload(); } catch (\Throwable) { $siteChrome = ['settings'=>[], 'navigation'=>[]]; }
+$chromeSettings = $siteChrome['settings'] ?? []; $headerNav = $siteChrome['navigation']['header'] ?? [];
 $catIcons    = ['Cards'=>'💳','Brochures'=>'📋','Flyers'=>'📄','Pamphlets'=>'📰','Stationery'=>'📝','Banners'=>'🏳️','Posters'=>'🖼️'];
 $currentUri  = $uri ?? '/';
 $productsActive = $currentUri === '/products' || $currentUri === '/categories' || str_starts_with($currentUri, '/category/') || str_starts_with($currentUri, '/product/');
@@ -63,7 +65,7 @@ foreach ($navProducts as $p) {
       <div class="topbar-left rcs-topbar-left">
         <span>
           <i class="fa-solid fa-truck-fast" aria-hidden="true"></i>
-          Free Delivery in Rajkot on All Orders Above ₹999
+          <?= htmlspecialchars((string)($chromeSettings['top_bar_text'] ?? 'Free Delivery in Rajkot on All Orders Above ₹999')) ?>
         </span>
       </div>
 
@@ -79,7 +81,7 @@ foreach ($navProducts as $p) {
   <nav class="navbar rcs-navbar" aria-label="Main navigation" data-design-target="header.navbar">
     <div class="header-container navbar-inner rcs-header-container rcs-navbar-inner">
       <a href="/" class="brand rcs-brand" aria-label="<?= $navBizName ?> Home">
-        <img src="/assets/images/rcs-graphic-logo.png"
+        <img src="<?= htmlspecialchars((string)($chromeSettings['header_logo'] ?? '/assets/images/rcs-graphic-logo.png'), ENT_QUOTES) ?>"
              alt="<?= $navBizName ?> Logo"
              class="brand-img rcs-brand-img" data-design-target="header.logo"
              loading="eager"
@@ -144,9 +146,11 @@ foreach ($navProducts as $p) {
               </a>
             </div>
           </li>
-          <li><a href="/portfolio" class="nav-link rcs-nav-link <?= $currentUri === '/portfolio' ? 'active' : '' ?>" data-design-target="header.nav_links">Portfolio</a></li>
-          <li><a href="/blogs" class="nav-link rcs-nav-link <?= $currentUri === '/blogs' ? 'active' : '' ?>" data-design-target="header.nav_links">Blog</a></li>
-          <li><a href="/contact" class="nav-link rcs-nav-link <?= $currentUri === '/contact' ? 'active' : '' ?>" data-design-target="header.nav_links">Contact</a></li>
+          <?php if ($headerNav): foreach ($headerNav as $navItem): $href=(string)$navItem['url']; ?>
+          <li><a href="<?= htmlspecialchars($href, ENT_QUOTES) ?>" class="nav-link rcs-nav-link <?= $currentUri === $href ? 'active' : '' ?>" data-design-target="header.nav_links"><?= htmlspecialchars((string)$navItem['label']) ?></a></li>
+          <?php endforeach; else: ?>
+          <li><a href="/portfolio" class="nav-link rcs-nav-link <?= $currentUri === '/portfolio' ? 'active' : '' ?>">Portfolio</a></li><li><a href="/blogs" class="nav-link rcs-nav-link <?= $currentUri === '/blogs' ? 'active' : '' ?>">Blog</a></li><li><a href="/contact" class="nav-link rcs-nav-link <?= $currentUri === '/contact' ? 'active' : '' ?>">Contact</a></li>
+          <?php endif; ?>
         </ul>
       </div>
 

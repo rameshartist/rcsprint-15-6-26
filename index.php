@@ -696,7 +696,7 @@ if ($uri === '/contact' && $method === 'GET') {
 }
 
 
-// Dedicated custom cart and checkout links. Custom quotes never mix with the normal cart checkout.
+// Legacy custom links add the approved quote to the persistent cart, then use the unified checkout.
 if (preg_match('#^/(custom-cart|custom-checkout)/([^/]+)/?$#', $uri, $m) && $method === 'GET') {
     $mode=$m[1]; $token=trim(rawurldecode($m[2]));
     if ($token === '' || strlen($token) > 160) {
@@ -722,7 +722,7 @@ if (preg_match('#^/(custom-cart|custom-checkout)/([^/]+)/?$#', $uri, $m) && $met
         // The WhatsApp link is intentionally a cart link: let the customer
         // review the persistent quote before continuing to its checkout.
         if($mode==='custom-cart') redirect('/cart');
-        $isCustomCheckout=true;view('checkout',compact('quote','cartItems','totals','user','token','isCustomCheckout'));exit;
+        redirect('/checkout');
     }catch(\Throwable $e){error_log($e->getMessage());http_response_code(500);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>'Please try again later.'],'settingsMap'=>[]]);exit;}
 }
 

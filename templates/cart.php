@@ -10,9 +10,7 @@ $cartGstPct = (float)($totals['gst_pct'] ?? 18);
 $cartGstAmt = (float)($totals['gst_amt'] ?? 0);
 $cartShipping = (float)($totals['shipping'] ?? 0);
 $cartTotal = (float)($totals['total'] ?? 0);
-$customQuoteItems = array_values(array_filter($cartItems ?? [], static fn($item): bool => ($item['item_type'] ?? 'product') === 'custom_quote'));
-$customCheckoutToken = $customQuoteItems ? trim((string)($customQuoteItems[0]['custom_quote_token'] ?? '')) : '';
-$checkoutUrl = $customCheckoutToken !== '' ? '/custom-checkout/' . rawurlencode($customCheckoutToken) : '/checkout';
+$checkoutUrl = '/checkout';
 ?>
 <div class="cartp-wrap">
   <div class="container cartp-page">

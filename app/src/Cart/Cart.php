@@ -98,7 +98,7 @@ class Cart
 
         } else {
             // Guest cart in session
-            if (!isset($_SESSION['cart'])) $_SESSION['cart'] = $customQuoteId ? array_values(array_filter($_SESSION['cart'] ?? [], static fn($item) => (int)($item['custom_quote_id'] ?? 0) !== $customQuoteId)) : [];
+            if (!isset($_SESSION['cart'])) $_SESSION['cart'] = [];
             $item['id']         = uniqid('ci_', true);
             $item['artwork_id'] = $data['artwork_id'] ?? null;
             $_SESSION['cart'][] = $item;
@@ -183,10 +183,17 @@ class Cart
         $combo = \Combos\ComboOfferManager::find($comboId);
         if (!$combo || empty($combo['is_active'])) return ['ok'=>false,'msg'=>'Combo offer is unavailable.'];
         $userId = \Auth\Auth::user()['id'] ?? null;
-        if (!$userId) return ['ok'=>false,'msg'=>'Please login to add this combo offer.'];
+        $snapshot = json_encode(['combo_offer_id'=>$comboId,'regular_price'=>(float)$combo['regular_price'],'saving'=>max(0,(float)$combo['regular_price']-(float)$combo['combo_price']),'items'=>$combo['items']], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+        if (!$userId) {
+            if (!isset($_SESSION['cart'])) $_SESSION['cart'] = [];
+            foreach ($_SESSION['cart'] as &$existing) {
+                if ((int)($existing['combo_offer_id'] ?? 0) === $comboId) { $existing['price_breakdown']=$snapshot; $existing['total_price']=(float)$combo['combo_price']; return ['ok'=>true,'cart_item_id'=>$existing['id'],'already_exists'=>true]; }
+            }
+            $item=['id'=>uniqid('ci_',true),'item_type'=>'combo_offer','combo_offer_id'=>$comboId,'product_id'=>null,'quality_id'=>null,'quantity'=>1,'attribute_selections'=>'[]','design_choice'=>'combo','design_brief'=>'','notes'=>'','price_breakdown'=>$snapshot,'total_price'=>(float)$combo['combo_price'],'product_name'=>(string)$combo['title'],'quality_name'=>'Combo Offer','product_image'=>(string)$combo['banner_image']];
+            $_SESSION['cart'][]=$item; return ['ok'=>true,'cart_item_id'=>$item['id']];
+        }
         $cart = \Database::row("SELECT id FROM carts WHERE user_id=?", [$userId]);
         $cartId = $cart ? (int)$cart['id'] : (int)\Database::insert("INSERT INTO carts(user_id,created_at) VALUES(?,NOW())",[$userId]);
-        $snapshot = json_encode(['combo_offer_id'=>$comboId,'regular_price'=>(float)$combo['regular_price'],'saving'=>max(0,(float)$combo['regular_price']-(float)$combo['combo_price']),'items'=>$combo['items']], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
         $existing=\Database::row("SELECT id FROM cart_items WHERE cart_id=? AND combo_offer_id=?",[$cartId,$comboId]);
         if($existing){\Database::query("UPDATE cart_items SET item_type='combo_offer',quantity=1,price_breakdown=?,total_price=? WHERE id=?",[$snapshot,(float)$combo['combo_price'],(int)$existing['id']]);return ['ok'=>true,'cart_item_id'=>(int)$existing['id'],'already_exists'=>true];}
         $id=\Database::insert("INSERT INTO cart_items(cart_id,item_type,combo_offer_id,product_id,quality_id,quantity,attribute_selections,design_choice,design_brief,notes,price_breakdown,total_price,created_at) VALUES(?,'combo_offer',?,NULL,NULL,1,'[]','combo','','',?,?,NOW())",[$cartId,$comboId,$snapshot,(float)$combo['combo_price']]);
@@ -334,6 +341,17 @@ class Cart
             if ($prod) $item = array_merge($item, $prod);
         }
         return $items;
+    }
+
+    /** Remove the full purchased cart after a verified payment. */
+    public static function clearPurchased(): void
+    {
+        $userId = \Auth\Auth::user()['id'] ?? null;
+        if ($userId) {
+            $cart = \Database::row("SELECT id FROM carts WHERE user_id = ?", [$userId]);
+            if ($cart) \Database::query("DELETE FROM cart_items WHERE cart_id = ?", [(int)$cart['id']]);
+        }
+        $_SESSION['cart'] = [];
     }
 
     public static function clear(?int $customQuoteId = null): void

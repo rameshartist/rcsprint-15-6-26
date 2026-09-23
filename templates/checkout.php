@@ -1,5 +1,6 @@
 <?php
 $isCustomCheckout=!empty($isCustomCheckout); $customQuoteId=(int)($quote['id']??0);
+$hasCustomQuoteInCart = (bool)array_filter($cartItems ?? [], static fn($item) => (int)($item['custom_quote_id'] ?? 0) > 0);
 $pageTitle = $isCustomCheckout ? 'Custom Order Checkout — RCS Graphic' : 'Checkout — RCS Graphic';
 $loadRazorpay = true;
 include INCLUDE_PATH . '/partials/head.php';
@@ -114,12 +115,12 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
               </div>
               <div class="checkout-item-side">
                 <span><?= number_format((int)($item['quantity'] ?? 0)) ?></span>
-                <?php if (!$isCustomCheckout && !empty($item['id'])): ?><button type="button" onclick="removeCheckoutItem('<?= htmlspecialchars((string)$item['id'], ENT_QUOTES) ?>')" aria-label="Remove <?= htmlspecialchars($item['product_name'] ?? 'item', ENT_QUOTES) ?>">×</button><?php endif; ?>
+                <?php if (($item['item_type'] ?? 'product') !== 'custom_quote' && !empty($item['id'])): ?><button type="button" onclick="removeCheckoutItem('<?= htmlspecialchars((string)$item['id'], ENT_QUOTES) ?>')" aria-label="Remove <?= htmlspecialchars($item['product_name'] ?? 'item', ENT_QUOTES) ?>">×</button><?php endif; ?>
               </div>
             </article>
             <?php endforeach; ?>
           </div>
-          <?php if (!$isCustomCheckout): ?>
+          <?php if (!$hasCustomQuoteInCart): ?>
           <div class="checkout-coupon-mini">
             <div><i class="fa-solid fa-tag" aria-hidden="true"></i> Have a coupon?</div>
             <div class="coupon-row"><input id="couponInp" placeholder="Enter coupon code" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"><button class="btn btn-outline btn-sm" onclick="applyCouponCheckout()">Apply</button></div>
@@ -150,7 +151,7 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
 </main>
 <script>
 const CSRF = '<?= $csrf ?>';
-const BIZ_WA = '<?= htmlspecialchars($bizWa) ?>'; const CUSTOM_QUOTE_ID=<?= $isCustomCheckout?$customQuoteId:0 ?>;
+const BIZ_WA = '<?= htmlspecialchars($bizWa) ?>'; const CUSTOM_QUOTE_ID=0;
 let checkoutCoupon = null;
 let checkoutProfile = { shipping: null, billing: null };
 let checkoutAddresses = [];

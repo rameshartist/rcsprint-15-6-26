@@ -465,6 +465,34 @@ if (str_starts_with($uri, '/admin/api/')) {
     header('Content-Type: application/json');
     $body = json_decode(file_get_contents('php://input'), true) ?? $_POST;
 
+    if ($uri === '/admin/api/live-updates' && $method === 'GET') {
+        $count = static function (string $sql): int { try { return (int)(Database::row($sql)['c'] ?? 0); } catch (\Throwable) { return 0; } };
+        $approvals = 0;
+        if (\Auth\Auth::isSuperAdmin()) foreach (['products','categories','coupons','home_deals'] as $table) $approvals += $count("SELECT COUNT(*) c FROM {$table} WHERE approval_status='pending'");
+        json(['ok'=>true,'counts'=>[
+            'orders'=>$count("SELECT COUNT(*) c FROM orders WHERE status='new_order'"),
+            'custom_orders'=>$count("SELECT COUNT(*) c FROM custom_quote_requests WHERE status='new'"),
+            'leads'=>$count("SELECT COUNT(*) c FROM contact_leads WHERE COALESCE(is_read,0)=0"),
+            'approvals'=>$approvals,
+        ],'server_time'=>date(DATE_ATOM)]);
+    }
+    if ($uri === '/admin/api/site-chrome' && $method === 'GET') { json(['ok'=>true,'data'=>\Site\SiteChromeManager::payload()]); }
+    if ($uri === '/admin/api/site-chrome' && $method === 'POST') {
+        try { \Site\SiteChromeManager::save($body); json(['ok'=>true]); }
+        catch (\Throwable $e) { error_log($e->getMessage()); json(['ok'=>false,'msg'=>'Could not save header and footer.'],500); }
+    }
+    if ($uri === '/admin/api/site-chrome/logo' && $method === 'POST') {
+        $file=$_FILES['image']??null;
+        if(!$file||$file['error']!==UPLOAD_ERR_OK) json(['ok'=>false,'msg'=>'Choose an image.'],422);
+        $ext=strtolower(pathinfo((string)$file['name'],PATHINFO_EXTENSION));
+        if(!in_array($ext,['jpg','jpeg','png','webp'],true)) json(['ok'=>false,'msg'=>'JPG, PNG or WEBP only.'],422);
+        if((int)$file['size']>5*1024*1024) json(['ok'=>false,'msg'=>'Image must be under 5 MB.'],422);
+        $dir=PUBLIC_PATH.'/uploads/site/'; if(!is_dir($dir)) mkdir($dir,0755,true);
+        $name='logo-'.bin2hex(random_bytes(8)).'.'.$ext;
+        if(!move_uploaded_file($file['tmp_name'],$dir.$name)) json(['ok'=>false,'msg'=>'Upload failed.'],500);
+        json(['ok'=>true,'path'=>'/uploads/site/'.$name]);
+    }
+
     $slugify = static function (string $value): string {
         $value = strtolower(trim($value));
         $value = preg_replace('/[^a-z0-9]+/i', '-', $value) ?? '';
@@ -3193,6 +3221,7 @@ $adminPage = match(true) {
     $uri === '/admin/backup'     => 'admin/backup',
     $uri === '/admin/order-cleanup' => 'admin/order-cleanup',
     $uri === '/admin/settings'   => 'admin/settings',
+    $uri === '/admin/header-footer' => 'admin/header-footer',
     $uri === '/admin/integrations' => 'admin/integrations',
     $uri === '/admin/audit-logs' => 'admin/audit-logs',
     default                      => null,

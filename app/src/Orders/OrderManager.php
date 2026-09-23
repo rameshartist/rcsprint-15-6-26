@@ -384,12 +384,11 @@ class OrderManager
         if (!$user) return ['ok' => false, 'msg' => 'Not authenticated'];
 
         $cartItems = \Cart\Cart::get();
-        $onlyCustomQuoteId = (int)($params['custom_quote_id'] ?? 0);
-        if ($onlyCustomQuoteId) $cartItems = array_values(array_filter($cartItems, static fn($item) => (int)($item['custom_quote_id'] ?? 0) === $onlyCustomQuoteId));
         if (empty($cartItems)) return ['ok' => false, 'msg' => 'Cart is empty'];
 
-        // An approved custom quote has a fixed payable amount and must never receive cart coupons.
-        $couponCode = $onlyCustomQuoteId > 0 ? null : ($params['coupon_code'] ?? null);
+        // Mixed carts are placed as one order. Fixed custom quotes must never receive a coupon.
+        $hasCustomQuoteInCart = (bool)array_filter($cartItems, static fn($item) => (int)($item['custom_quote_id'] ?? 0) > 0);
+        $couponCode = $hasCustomQuoteInCart ? null : ($params['coupon_code'] ?? null);
         $totals = \Cart\Cart::totals($cartItems, $couponCode);
         $billing = self::sanitizeBilling($params['billing'] ?? null);
         $shipping = self::sanitizeShipping($params['shipping'] ?? null);
@@ -531,9 +530,8 @@ class OrderManager
 
         // Non-critical operations after commit should not fail checkout.
         try {
-            // A custom quote must survive failed/abandoned payment attempts.
-            // Razorpay::handleSuccess removes it only after capture is verified.
-            if (!$onlyCustomQuoteId) \Cart\Cart::clear();
+            // Razorpay carts are cleared only after verified capture, so failed payments keep every item.
+            if (($params['payment_method'] ?? 'razorpay') !== 'razorpay') \Cart\Cart::clearPurchased();
         } catch (\Throwable $e) {
             error_log('Order placed but cart clear failed: ' . $e->getMessage());
         }

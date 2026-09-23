@@ -85,7 +85,7 @@ class Razorpay
         );
         if ($existing) {
             $order = self::findOrderByPaymentId($razorpayPaymentId);
-            if (!empty($order['custom_quote_id'])) \Cart\Cart::clear((int)$order['custom_quote_id']);
+            \Cart\Cart::clearPurchased();
             return ['ok' => true, 'already_processed' => true, 'order' => $order];
         }
 
@@ -122,7 +122,7 @@ class Razorpay
             $db->commit();
 
             $order = \Orders\OrderManager::getOrder($internalOrderId);
-            if (!empty($order['custom_quote_id'])) \Cart\Cart::clear((int)$order['custom_quote_id']);
+            \Cart\Cart::clearPurchased();
             if ($order) {
                 try { \Email\Mailer::sendPaymentSuccess($order); } catch (\Throwable) {}
                 try { \Sheets\SheetsSync::syncOrder($order); } catch (\Throwable) {}
