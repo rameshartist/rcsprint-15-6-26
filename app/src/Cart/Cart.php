@@ -21,6 +21,7 @@ class Cart
                 "ALTER TABLE cart_items ADD COLUMN item_type VARCHAR(30) NOT NULL DEFAULT 'product' AFTER cart_id",
                 "ALTER TABLE cart_items ADD COLUMN custom_quote_id INT UNSIGNED NULL AFTER item_type",
                 "ALTER TABLE cart_items ADD COLUMN custom_quote_token VARCHAR(80) NULL AFTER custom_quote_id",
+                "ALTER TABLE cart_items ADD COLUMN combo_offer_id INT UNSIGNED NULL AFTER custom_quote_token",
                 "CREATE INDEX idx_cart_items_custom_quote ON cart_items (custom_quote_id)",
             ] as $sql) { try { \Database::query($sql); } catch (\Throwable) {} }
             self::$customQuoteSchemaReady = true;
@@ -176,6 +177,22 @@ class Cart
         return ['ok' => true, 'cart_item_id' => $item['id']];
     }
 
+    public static function addComboOffer(int $comboId): array
+    {
+        self::ensureCustomQuoteSchema();
+        $combo = \Combos\ComboOfferManager::find($comboId);
+        if (!$combo || empty($combo['is_active'])) return ['ok'=>false,'msg'=>'Combo offer is unavailable.'];
+        $userId = \Auth\Auth::user()['id'] ?? null;
+        if (!$userId) return ['ok'=>false,'msg'=>'Please login to add this combo offer.'];
+        $cart = \Database::row("SELECT id FROM carts WHERE user_id=?", [$userId]);
+        $cartId = $cart ? (int)$cart['id'] : (int)\Database::insert("INSERT INTO carts(user_id,created_at) VALUES(?,NOW())",[$userId]);
+        $snapshot = json_encode(['combo_offer_id'=>$comboId,'regular_price'=>(float)$combo['regular_price'],'saving'=>max(0,(float)$combo['regular_price']-(float)$combo['combo_price']),'items'=>$combo['items']], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+        $existing=\Database::row("SELECT id FROM cart_items WHERE cart_id=? AND combo_offer_id=?",[$cartId,$comboId]);
+        if($existing){\Database::query("UPDATE cart_items SET item_type='combo_offer',quantity=1,price_breakdown=?,total_price=? WHERE id=?",[$snapshot,(float)$combo['combo_price'],(int)$existing['id']]);return ['ok'=>true,'cart_item_id'=>(int)$existing['id'],'already_exists'=>true];}
+        $id=\Database::insert("INSERT INTO cart_items(cart_id,item_type,combo_offer_id,product_id,quality_id,quantity,attribute_selections,design_choice,design_brief,notes,price_breakdown,total_price,created_at) VALUES(?,'combo_offer',?,NULL,NULL,1,'[]','combo','','',?,?,NOW())",[$cartId,$comboId,$snapshot,(float)$combo['combo_price']]);
+        return ['ok'=>true,'cart_item_id'=>(int)$id];
+    }
+
     public static function remove(string $itemId): array
     {
         $userId = \Auth\Auth::user()['id'] ?? null;
@@ -269,6 +286,7 @@ class Cart
 
     public static function get(): array
     {
+        \Combos\ComboOfferManager::ensureSchema();
         $userId = \Auth\Auth::user()['id'] ?? null;
 
         if ($userId) {
@@ -278,7 +296,7 @@ class Cart
                         p.category_id,
                         CASE WHEN ci.item_type='custom_quote' THEN 'Custom Quote' ELSE 'Standard' END as quality_name,
                         pi.url as product_image,
-                        cqr.request_code AS custom_quote_code,
+                        cqr.request_code AS custom_quote_code, co.title AS combo_offer_title, co.banner_image AS combo_offer_image,
                         cqr.size_dimension AS custom_size_dimension,
                         cqr.material_type AS custom_material_type,
                         cqr.quantity AS custom_requested_quantity
@@ -286,13 +304,14 @@ class Cart
                  JOIN carts c ON ci.cart_id = c.id
                  LEFT JOIN products p ON ci.product_id = p.id
                  LEFT JOIN custom_quote_requests cqr ON cqr.id = ci.custom_quote_id
+                 LEFT JOIN combo_offers co ON co.id = ci.combo_offer_id
                  LEFT JOIN product_images pi ON pi.product_id = p.id AND pi.is_primary = 1
                  LEFT JOIN artwork_files af ON af.cart_item_id = ci.id
                  WHERE c.user_id = ?
                  ORDER BY ci.created_at ASC",
                 [$userId]
             );
-            foreach ($items as &$item) self::normalizeCustomQuoteItem($item);
+            foreach ($items as &$item) { self::normalizeCustomQuoteItem($item); self::normalizeComboOfferItem($item); }
             return $items;
         }
 
@@ -430,6 +449,14 @@ class Cart
         $item['custom_size_dimension'] = $item['custom_size_dimension'] ?? ($attrs['size_dimension'] ?? '');
         $item['custom_material_type'] = $item['custom_material_type'] ?? ($attrs['material_type'] ?? '');
         $item['custom_requested_quantity'] = $item['custom_requested_quantity'] ?? ($attrs['requested_quantity'] ?? '');
+    }
+
+    private static function normalizeComboOfferItem(array &$item): void
+    {
+        if (($item['item_type'] ?? '') !== 'combo_offer') return;
+        $item['product_name'] = $item['combo_offer_title'] ?: 'Combo Offer';
+        $item['product_image'] = $item['combo_offer_image'] ?: '/assets/images/RCS%20PRINT%20LOGO.png';
+        $item['quality_name'] = 'Combo Offer'; $item['slug']=''; $item['quantity']=1;
     }
 
     private static function validateItem(array $d): array

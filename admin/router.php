@@ -1765,6 +1765,13 @@ if (str_starts_with($uri, '/admin/api/')) {
     }
 
 
+    if ($uri === '/admin/api/combo-offers' && $method === 'GET') { try { json(['ok'=>true,'offers'=>\Combos\ComboOfferManager::all(),'products'=>Database::rows("SELECT id,name FROM products WHERE is_active=1 ORDER BY name")]); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>$e->getMessage()],500); } }
+    if ($uri === '/admin/api/combo-offers' && $method === 'POST') { try { json(\Combos\ComboOfferManager::save($body),200); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not save combo offer.'],500); } }
+    if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && $method === 'GET') { $offer=\Combos\ComboOfferManager::find((int)$m[1]); json(['ok'=>(bool)$offer,'offer'=>$offer],$offer?200:404); }
+    if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && in_array($method,['PUT','POST'],true)) { try { json(\Combos\ComboOfferManager::save($body,(int)$m[1])); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not update combo offer.'],500); } }
+    if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && $method === 'DELETE') { \Combos\ComboOfferManager::delete((int)$m[1]); json(['ok'=>true]); }
+    if ($uri === '/admin/api/combo-offers/upload' && $method === 'POST') { $file=$_FILES['image']??null; if(!$file||$file['error']!==UPLOAD_ERR_OK) json(['ok'=>false,'msg'=>'Choose an image.'],422); $ext=strtolower(pathinfo($file['name'],PATHINFO_EXTENSION)); if(!in_array($ext,['jpg','jpeg','png','webp'],true)) json(['ok'=>false,'msg'=>'JPG, PNG or WEBP only.'],422); $dir=PUBLIC_PATH.'/uploads/combos/'; if(!is_dir($dir)) mkdir($dir,0755,true); $name='combo-'.bin2hex(random_bytes(8)).'.'.$ext; if(!move_uploaded_file($file['tmp_name'],$dir.$name)) json(['ok'=>false,'msg'=>'Upload failed.'],500); json(['ok'=>true,'path'=>'/uploads/combos/'.$name]); }
+
     if ($uri === '/admin/api/deals' && $method === 'GET') {
         try {
             $rows = Database::rows("SELECT * FROM home_deals ORDER BY sort_order ASC, id DESC");
@@ -3166,6 +3173,7 @@ $adminPage = match(true) {
     $uri === '/admin/products/new' => 'admin/products-new',
     $uri === '/admin/banners'    => 'admin/banners',
     $uri === '/admin/deals'      => 'admin/deals',
+    $uri === '/admin/combo-offers' => 'admin/combo-offers',
     $uri === '/admin/business-needs' => 'admin/business-needs',
     $uri === '/admin/business-needs/new' => 'admin/business-needs-new',
     $uri === '/admin/deals/new'  => 'admin/deals-new',

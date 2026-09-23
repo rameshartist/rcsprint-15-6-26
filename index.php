@@ -151,6 +151,8 @@ if ($uri === '/' && $method === 'GET') {
         $products    = \Catalog\ProductCatalog::all();
         $homeBanners = Database::rows("SELECT * FROM home_banners WHERE is_active=1 ORDER BY sort_order ASC, id DESC");
         $homeDeals   = [];
+        $comboOffers = [];
+        try { $comboOffers = \Combos\ComboOfferManager::home(); } catch (\Throwable $e) { error_log('Home combo offers unavailable: '.$e->getMessage()); }
         try {
             $homeDeals = Database::rows("SELECT * FROM home_deals WHERE is_active=1 ORDER BY sort_order ASC, id DESC");
         } catch (\Throwable $e) {
@@ -176,13 +178,20 @@ if ($uri === '/' && $method === 'GET') {
         $categories = $products = [];
         $homeBanners = [];
         $homeDeals = [];
+        $comboOffers = [];
         $homeBlogs = [];
         $businessNeeds = [];
         $settingsMap = [];
         $homeReviews = [];
     }
-    view('home', compact('categories', 'products', 'settingsMap', 'homeBanners', 'homeDeals', 'homeBlogs', 'homeReviews', 'businessNeeds'));
+    view('home', compact('categories', 'products', 'settingsMap', 'homeBanners', 'homeDeals', 'comboOffers', 'homeBlogs', 'homeReviews', 'businessNeeds'));
     exit;
+}
+
+if (preg_match('#^/combo/([a-z0-9-]+)$#', $uri, $m) && $method === 'GET') {
+    try { $combo = \Combos\ComboOfferManager::findBySlug($m[1]); } catch (\Throwable) { $combo = null; }
+    if (!$combo) { http_response_code(404); view('404'); exit; }
+    view('combo-offer', compact('combo')); exit;
 }
 
 

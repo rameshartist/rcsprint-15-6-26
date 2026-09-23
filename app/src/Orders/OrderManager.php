@@ -446,6 +446,8 @@ class OrderManager
 
             // Insert order items (snapshot of cart)
             foreach ($cartItems as $item) {
+                $itemType = (string)($item['item_type'] ?? 'product');
+                $isCatalogProduct = $itemType === 'product';
                 $orderItemId = \Database::insert(
                     "INSERT INTO order_items (order_id, item_type, custom_quote_id, product_id, quality_id, quantity,
                         product_name, quality_name, attribute_selections, design_choice,
@@ -453,10 +455,10 @@ class OrderManager
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [
                         $dbOrderId,
-                        ($item['item_type'] ?? 'product') === 'custom_quote' ? 'custom_quote' : 'product',
+                        in_array($itemType, ['custom_quote','combo_offer'], true) ? $itemType : 'product',
                         !empty($item['custom_quote_id']) ? (int)$item['custom_quote_id'] : null,
-                        ($item['item_type'] ?? 'product') === 'custom_quote' ? null : (int)($item['product_id'] ?? 0),
-                        ($item['item_type'] ?? 'product') === 'custom_quote' ? null : (int)($item['quality_id'] ?? 1),
+                        $isCatalogProduct ? (int)($item['product_id'] ?? 0) : null,
+                        $isCatalogProduct ? (int)($item['quality_id'] ?? 1) : null,
                         (int)($item['quantity'] ?? 1),
                         $item['product_name'],
                         $item['quality_name'],

@@ -456,6 +456,9 @@ if ($uri === '/api/cart/add' && $method === 'POST') {
     $result = \Cart\Cart::add($body);
     json($result);
 }
+if ($uri === '/api/cart/combo' && $method === 'POST') {
+    json(\Cart\Cart::addComboOffer((int)($body['combo_offer_id'] ?? 0)));
+}
 
 if (preg_match('#^/api/cart/remove/(.+)$#', $uri, $m) && $method === 'DELETE') {
     json(\Cart\Cart::remove($m[1]));

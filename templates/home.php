@@ -238,6 +238,26 @@ foreach ($categories as $cat) {
   </div>
 </section>
 
+<?php if (!empty($comboOffers ?? [])): ?>
+<section class="home-combos" aria-labelledby="homeComboTitle" data-reveal>
+  <div class="container">
+    <h2 id="homeComboTitle">Scale Your Order, <span>Maximize Savings</span></h2>
+    <div class="home-combo-mosaic">
+      <?php foreach (array_slice($comboOffers,0,4) as $index=>$offer): $slot=$index===0?'large':($index===1?'wide':'square'); ?>
+      <a class="home-combo-card home-combo-card--<?= $slot ?>" href="/combo/<?= htmlspecialchars((string)$offer['slug']) ?>" style="--combo-image:url('<?= htmlspecialchars((string)($offer['banner_image']??''),ENT_QUOTES) ?>')">
+        <span class="home-combo-shade"></span><span class="home-combo-copy">
+          <?php if (!empty($offer['badge'])): ?><small><?= htmlspecialchars((string)$offer['badge']) ?></small><?php endif; ?>
+          <strong><?= htmlspecialchars((string)$offer['title']) ?></strong>
+          <?php if (!empty($offer['short_description'])): ?><em><?= htmlspecialchars((string)$offer['short_description']) ?></em><?php endif; ?>
+          <b><?= htmlspecialchars((string)($offer['cta_text'] ?: 'View Offer')) ?> →</b>
+        </span>
+      </a>
+      <?php endforeach; ?>
+    </div>
+  </div>
+</section>
+<?php endif; ?>
+
 <!-- BEST DEALS -->
 <section class="best-deals-section" aria-labelledby="bestDealsTitle" data-reveal>
   <div class="best-deals-container">
