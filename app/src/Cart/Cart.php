@@ -183,7 +183,7 @@ class Cart
         $combo = \Combos\ComboOfferManager::find($comboId);
         if (!$combo || empty($combo['is_active'])) return ['ok'=>false,'msg'=>'Combo offer is unavailable.'];
         $userId = \Auth\Auth::user()['id'] ?? null;
-        $snapshot = json_encode(['combo_offer_id'=>$comboId,'regular_price'=>(float)$combo['regular_price'],'saving'=>max(0,(float)$combo['regular_price']-(float)$combo['combo_price']),'items'=>$combo['items']], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+        $snapshot = json_encode(['combo_offer_id'=>$comboId,'regular_price'=>(float)$combo['regular_price'],'discount_percent'=>(float)($combo['discount_percent']??0),'saving'=>max(0,(float)$combo['regular_price']-(float)$combo['combo_price']),'items'=>$combo['items'],'custom_items'=>$combo['custom_items']??[]], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
         if (!$userId) {
             if (!isset($_SESSION['cart'])) $_SESSION['cart'] = [];
             foreach ($_SESSION['cart'] as &$existing) {

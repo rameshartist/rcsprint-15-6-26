@@ -1793,7 +1793,7 @@ if (str_starts_with($uri, '/admin/api/')) {
     }
 
 
-    if ($uri === '/admin/api/combo-offers' && $method === 'GET') { try { json(['ok'=>true,'offers'=>\Combos\ComboOfferManager::all(),'products'=>Database::rows("SELECT id,name FROM products WHERE is_active=1 ORDER BY name")]); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>$e->getMessage()],500); } }
+    if ($uri === '/admin/api/combo-offers' && $method === 'GET') { try { json(['ok'=>true,'offers'=>\Combos\ComboOfferManager::all(),'products'=>\Combos\ComboOfferManager::productsForAdmin()]); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>$e->getMessage()],500); } }
     if ($uri === '/admin/api/combo-offers' && $method === 'POST') { try { json(\Combos\ComboOfferManager::save($body),200); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not save combo offer.'],500); } }
     if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && $method === 'GET') { $offer=\Combos\ComboOfferManager::find((int)$m[1]); json(['ok'=>(bool)$offer,'offer'=>$offer],$offer?200:404); }
     if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && in_array($method,['PUT','POST'],true)) { try { json(\Combos\ComboOfferManager::save($body,(int)$m[1])); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not update combo offer.'],500); } }
