@@ -3000,8 +3000,8 @@ if ($uri === '/admin/orders') {
         $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
         $allItems = Database::rows(
             "SELECT oi.*,
-                    COALESCE(cqr.product_image, oi.custom_product_image, pi.image_path, pi.url) AS product_image,
-                    cqr.product_name AS custom_product_name, cqr.size_dimension AS custom_size_dimension,
+                    COALESCE(cqr.product_image, oi.custom_product_image, co.banner_image, pi.image_path, pi.url) AS product_image,
+                    cqr.request_code AS custom_quote_code, cqr.product_name AS custom_product_name, cqr.size_dimension AS custom_size_dimension,
                     cqr.material_type AS custom_material_type, cqr.quantity AS custom_quantity,
                     cqr.quoted_amount AS custom_amount, cqr.design_fee AS custom_design_fee, cqr.quote_note AS custom_quote_note,
                     af.id AS artwork_file_id,
@@ -3022,6 +3022,7 @@ if ($uri === '/admin/orders') {
              FROM order_items oi
              LEFT JOIN product_images pi ON pi.product_id = oi.product_id AND pi.is_primary = 1
              LEFT JOIN custom_quote_requests cqr ON cqr.id = oi.custom_quote_id
+             LEFT JOIN combo_offers co ON co.id = oi.combo_offer_id
              LEFT JOIN order_design_approvals oda ON oda.order_item_id = oi.id
              LEFT JOIN artwork_files af ON af.id = oda.customer_artwork_file_id
              LEFT JOIN artwork_files pf ON pf.id = oda.proof_file_id

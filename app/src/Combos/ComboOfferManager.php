@@ -9,12 +9,14 @@ final class ComboOfferManager
     {
         \Database::query("CREATE TABLE IF NOT EXISTS combo_offers (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,title VARCHAR(180) NOT NULL,slug VARCHAR(190) NOT NULL UNIQUE,badge VARCHAR(100) NULL,short_description VARCHAR(500) NULL,description TEXT NULL,banner_image VARCHAR(500) NULL,regular_price DECIMAL(12,2) NOT NULL DEFAULT 0,discount_percent DECIMAL(6,2) NOT NULL DEFAULT 0,combo_price DECIMAL(12,2) NOT NULL DEFAULT 0,layout_slot ENUM('large','wide','square') NOT NULL DEFAULT 'square',cta_text VARCHAR(80) NOT NULL DEFAULT 'View Offer',sort_order INT NOT NULL DEFAULT 0,show_on_home TINYINT(1) NOT NULL DEFAULT 1,is_active TINYINT(1) NOT NULL DEFAULT 1,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,KEY idx_combo_home (is_active,show_on_home,sort_order)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         try { \Database::query("ALTER TABLE combo_offers ADD COLUMN discount_percent DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER regular_price"); } catch (\Throwable) {}
-        foreach (['show_title','show_badge','show_cta','show_short_description','show_description'] as $column) {
+        foreach (['show_title','show_badge','show_cta','show_short_description','show_description','show_title_home','show_title_detail','show_badge_home','show_badge_detail','show_cta_home','show_cta_detail','show_short_description_home','show_short_description_detail','show_description_home','show_description_detail'] as $column) {
             try { \Database::query("ALTER TABLE combo_offers ADD COLUMN {$column} TINYINT(1) NOT NULL DEFAULT 1"); } catch (\Throwable) {}
         }
+        try { \Database::query("ALTER TABLE combo_offers MODIFY layout_slot ENUM('large','wide','square','square_3','square_4') NOT NULL DEFAULT 'square_3'"); } catch (\Throwable) {}
         \Database::query("CREATE TABLE IF NOT EXISTS combo_offer_items (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,combo_offer_id INT UNSIGNED NOT NULL,product_id INT UNSIGNED NOT NULL,quantity INT NOT NULL DEFAULT 1,regular_price DECIMAL(12,2) NOT NULL DEFAULT 0,sort_order INT NOT NULL DEFAULT 0,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY idx_combo_items (combo_offer_id,sort_order),CONSTRAINT fk_combo_items_offer FOREIGN KEY (combo_offer_id) REFERENCES combo_offers(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         \Database::query("CREATE TABLE IF NOT EXISTS combo_offer_custom_items (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,combo_offer_id INT UNSIGNED NOT NULL,item_name VARCHAR(180) NOT NULL,item_price DECIMAL(12,2) NOT NULL DEFAULT 0,thumbnail_path VARCHAR(500) NULL,sort_order INT NOT NULL DEFAULT 0,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY idx_combo_custom_items (combo_offer_id,sort_order),CONSTRAINT fk_combo_custom_offer FOREIGN KEY (combo_offer_id) REFERENCES combo_offers(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         try { \Database::query("ALTER TABLE combo_offer_custom_items ADD COLUMN quantity INT NOT NULL DEFAULT 1 AFTER item_name"); } catch (\Throwable) {}
+        try { \Database::query("ALTER TABLE combo_offer_custom_items ADD COLUMN description TEXT NULL AFTER thumbnail_path"); } catch (\Throwable) {}
     }
 
     public static function all(bool $public = false, string $search = ''): array
@@ -29,7 +31,7 @@ final class ComboOfferManager
     public static function home(): array
     {
         self::ensureSchema();
-        return \Database::rows("SELECT * FROM combo_offers WHERE is_active=1 AND show_on_home=1 ORDER BY FIELD(layout_slot,'large','wide','square'),sort_order,id DESC LIMIT 4");
+        return \Database::rows("SELECT * FROM combo_offers WHERE is_active=1 AND show_on_home=1 ORDER BY FIELD(layout_slot,'large','wide','square_3','square_4','square'),sort_order,id DESC LIMIT 4");
     }
 
     public static function productsForAdmin(): array
@@ -59,7 +61,7 @@ final class ComboOfferManager
 
     private static function withItems(array $offer): array
     {
-        $offer['items'] = \Database::rows("SELECT ci.*,p.name product_name,p.slug product_slug,(SELECT COALESCE(pi.image_path,pi.url) FROM product_images pi WHERE pi.product_id=p.id ORDER BY pi.is_primary DESC,pi.id LIMIT 1) product_image FROM combo_offer_items ci JOIN products p ON p.id=ci.product_id WHERE ci.combo_offer_id=? ORDER BY ci.sort_order,ci.id", [(int)$offer['id']]);
+        $offer['items'] = \Database::rows("SELECT ci.*,p.name product_name,p.slug product_slug,p.description product_description,(SELECT COALESCE(pi.image_path,pi.url) FROM product_images pi WHERE pi.product_id=p.id ORDER BY pi.is_primary DESC,pi.id LIMIT 1) product_image FROM combo_offer_items ci JOIN products p ON p.id=ci.product_id WHERE ci.combo_offer_id=? ORDER BY ci.sort_order,ci.id", [(int)$offer['id']]);
         $offer['custom_items'] = \Database::rows("SELECT * FROM combo_offer_custom_items WHERE combo_offer_id=? ORDER BY sort_order,id", [(int)$offer['id']]);
         return $offer;
     }
@@ -87,7 +89,7 @@ final class ComboOfferManager
             $name = trim((string)($row['item_name'] ?? '')); $price = round(max(0, (float)($row['item_price'] ?? 0)), 2); $quantity=max(1,(int)($row['quantity']??1));
             if ($name === '' && $price <= 0) continue;
             if ($name === '' || $price <= 0) return ['ok'=>false,'msg'=>'Every custom item needs a name and price.'];
-            $customItems[] = ['item_name'=>$name,'quantity'=>$quantity,'item_price'=>$price,'thumbnail_path'=>trim((string)($row['thumbnail_path'] ?? ''))];
+            $customItems[] = ['item_name'=>$name,'quantity'=>$quantity,'item_price'=>$price,'thumbnail_path'=>trim((string)($row['thumbnail_path'] ?? '')),'description'=>trim((string)($row['description'] ?? ''))];
             $subtotal += $price * $quantity;
         }
         if (!$items && !$customItems) return ['ok'=>false,'msg'=>'Select at least one product or add a custom item.'];
@@ -99,19 +101,19 @@ final class ComboOfferManager
         if ($offerPrice > $subtotal) return ['ok'=>false,'msg'=>'Offer price cannot exceed the products subtotal.'];
         $discount = $subtotal > 0 ? round((1 - ($offerPrice / $subtotal)) * 100, 2) : 0;
 
-        $values = [$title,$slug,trim((string)($data['badge']??'')),trim((string)($data['short_description']??'')),trim((string)($data['description']??'')),trim((string)($data['banner_image']??'')),$subtotal,$discount,$offerPrice,in_array(($data['layout_slot']??''),['large','wide','square'],true)?$data['layout_slot']:'square',trim((string)($data['cta_text']??'View Offer'))?:'View Offer',!empty($data['show_title'])?1:0,!empty($data['show_badge'])?1:0,!empty($data['show_cta'])?1:0,!empty($data['show_short_description'])?1:0,!empty($data['show_description'])?1:0];
+        $values = [$title,$slug,trim((string)($data['badge']??'')),trim((string)($data['short_description']??'')),trim((string)($data['description']??'')),trim((string)($data['banner_image']??'')),$subtotal,$discount,$offerPrice,in_array(($data['layout_slot']??''),['large','wide','square_3','square_4'],true)?$data['layout_slot']:'square_3',trim((string)($data['cta_text']??'View Offer'))?:'View Offer',!empty($data['show_title_home'])?1:0,!empty($data['show_title_detail'])?1:0,!empty($data['show_badge_home'])?1:0,!empty($data['show_badge_detail'])?1:0,!empty($data['show_cta_home'])?1:0,!empty($data['show_cta_detail'])?1:0,!empty($data['show_short_description_home'])?1:0,!empty($data['show_short_description_detail'])?1:0,!empty($data['show_description_home'])?1:0,!empty($data['show_description_detail'])?1:0];
         $db = \Database::get();
         try {
             $db->beginTransaction();
             if ($id) {
-                \Database::query("UPDATE combo_offers SET title=?,slug=?,badge=?,short_description=?,description=?,banner_image=?,regular_price=?,discount_percent=?,combo_price=?,layout_slot=?,cta_text=?,show_title=?,show_badge=?,show_cta=?,show_short_description=?,show_description=?,updated_at=NOW() WHERE id=?", [...$values,$id]);
+                \Database::query("UPDATE combo_offers SET title=?,slug=?,badge=?,short_description=?,description=?,banner_image=?,regular_price=?,discount_percent=?,combo_price=?,layout_slot=?,cta_text=?,show_title_home=?,show_title_detail=?,show_badge_home=?,show_badge_detail=?,show_cta_home=?,show_cta_detail=?,show_short_description_home=?,show_short_description_detail=?,show_description_home=?,show_description_detail=?,updated_at=NOW() WHERE id=?", [...$values,$id]);
             } else {
-                $id = \Database::insert("INSERT INTO combo_offers(title,slug,badge,short_description,description,banner_image,regular_price,discount_percent,combo_price,layout_slot,cta_text,show_title,show_badge,show_cta,show_short_description,show_description,sort_order,show_on_home,is_active,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,1,0,NOW())", $values);
+                $id = \Database::insert("INSERT INTO combo_offers(title,slug,badge,short_description,description,banner_image,regular_price,discount_percent,combo_price,layout_slot,cta_text,show_title_home,show_title_detail,show_badge_home,show_badge_detail,show_cta_home,show_cta_detail,show_short_description_home,show_short_description_detail,show_description_home,show_description_detail,sort_order,show_on_home,is_active,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,1,0,NOW())", $values);
             }
             \Database::query("DELETE FROM combo_offer_items WHERE combo_offer_id=?", [$id]);
             \Database::query("DELETE FROM combo_offer_custom_items WHERE combo_offer_id=?", [$id]);
             foreach ($items as $i => $row) \Database::insert("INSERT INTO combo_offer_items(combo_offer_id,product_id,quantity,regular_price,sort_order,created_at) VALUES(?,?,?,?,?,NOW())", [$id,$row['product_id'],$row['quantity'],$row['regular_price'],$i]);
-            foreach ($customItems as $i => $row) \Database::insert("INSERT INTO combo_offer_custom_items(combo_offer_id,item_name,quantity,item_price,thumbnail_path,sort_order,created_at) VALUES(?,?,?,?,?,?,NOW())", [$id,$row['item_name'],$row['quantity'],$row['item_price'],$row['thumbnail_path'],$i]);
+            foreach ($customItems as $i => $row) \Database::insert("INSERT INTO combo_offer_custom_items(combo_offer_id,item_name,quantity,item_price,thumbnail_path,description,sort_order,created_at) VALUES(?,?,?,?,?,?,?,NOW())", [$id,$row['item_name'],$row['quantity'],$row['item_price'],$row['thumbnail_path'],$row['description'],$i]);
             $db->commit();
         } catch (\Throwable $e) {
             if ($db->inTransaction()) $db->rollBack();

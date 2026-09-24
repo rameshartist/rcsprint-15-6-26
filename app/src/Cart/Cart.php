@@ -177,26 +177,44 @@ class Cart
         return ['ok' => true, 'cart_item_id' => $item['id']];
     }
 
-    public static function addComboOffer(int $comboId): array
+    public static function addComboOffer(int $comboId, array $options = []): array
     {
         self::ensureCustomQuoteSchema();
         $combo = \Combos\ComboOfferManager::find($comboId);
         if (!$combo || empty($combo['is_active'])) return ['ok'=>false,'msg'=>'Combo offer is unavailable.'];
+        $designChoice=in_array(($options['design_choice']??'upload'),['upload','rcs'],true)?$options['design_choice']:'upload'; $designBrief=trim((string)($options['design_brief']??'')); $artworkId=$designChoice==='upload'?(int)($options['artwork_id']??0):0;
         $userId = \Auth\Auth::user()['id'] ?? null;
+        if ($designChoice === 'upload') {
+            if ($artworkId <= 0) return ['ok'=>false,'msg'=>'Upload your design file before adding this combo.'];
+            $artwork = \Database::row("SELECT id,uploaded_by,cart_item_id FROM artwork_files WHERE id=?", [$artworkId]);
+            $guestArtworkIds = array_map('intval', (array)($_SESSION['guest_artwork_ids'] ?? []));
+            $ownsArtwork = $userId
+                ? ($artwork && (int)($artwork['uploaded_by'] ?? 0) === (int)$userId)
+                : ($artwork && in_array($artworkId, $guestArtworkIds, true));
+            if (!$ownsArtwork || !empty($artwork['cart_item_id'])) return ['ok'=>false,'msg'=>'The selected design upload is invalid or already in use.'];
+        }
         $snapshot = json_encode(['combo_offer_id'=>$comboId,'regular_price'=>(float)$combo['regular_price'],'discount_percent'=>(float)($combo['discount_percent']??0),'saving'=>max(0,(float)$combo['regular_price']-(float)$combo['combo_price']),'items'=>$combo['items'],'custom_items'=>$combo['custom_items']??[]], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
         if (!$userId) {
             if (!isset($_SESSION['cart'])) $_SESSION['cart'] = [];
             foreach ($_SESSION['cart'] as &$existing) {
-                if ((int)($existing['combo_offer_id'] ?? 0) === $comboId) { $existing['price_breakdown']=$snapshot; $existing['total_price']=(float)$combo['combo_price']; return ['ok'=>true,'cart_item_id'=>$existing['id'],'already_exists'=>true]; }
+                if ((int)($existing['combo_offer_id'] ?? 0) === $comboId) {
+                    $existing['price_breakdown'] = $snapshot;
+                    $existing['total_price'] = (float)$combo['combo_price'];
+                    $existing['design_choice'] = $designChoice;
+                    $existing['design_brief'] = $designBrief;
+                    $existing['artwork_id'] = $artworkId ?: null;
+                    return ['ok'=>true,'cart_item_id'=>$existing['id'],'already_exists'=>true];
+                }
             }
-            $item=['id'=>uniqid('ci_',true),'item_type'=>'combo_offer','combo_offer_id'=>$comboId,'product_id'=>null,'quality_id'=>null,'quantity'=>1,'attribute_selections'=>'[]','design_choice'=>'combo','design_brief'=>'','notes'=>'','price_breakdown'=>$snapshot,'total_price'=>(float)$combo['combo_price'],'product_name'=>(string)$combo['title'],'quality_name'=>'Combo Offer','product_image'=>(string)$combo['banner_image']];
+            $item=['id'=>uniqid('ci_',true),'artwork_id'=>$artworkId?:null,'item_type'=>'combo_offer','combo_offer_id'=>$comboId,'product_id'=>null,'quality_id'=>null,'quantity'=>1,'attribute_selections'=>'[]','design_choice'=>$designChoice,'design_brief'=>$designBrief,'notes'=>'','price_breakdown'=>$snapshot,'total_price'=>(float)$combo['combo_price'],'product_name'=>(string)$combo['title'],'quality_name'=>'Combo Offer','product_image'=>(string)$combo['banner_image']];
             $_SESSION['cart'][]=$item; return ['ok'=>true,'cart_item_id'=>$item['id']];
         }
         $cart = \Database::row("SELECT id FROM carts WHERE user_id=?", [$userId]);
         $cartId = $cart ? (int)$cart['id'] : (int)\Database::insert("INSERT INTO carts(user_id,created_at) VALUES(?,NOW())",[$userId]);
         $existing=\Database::row("SELECT id FROM cart_items WHERE cart_id=? AND combo_offer_id=?",[$cartId,$comboId]);
-        if($existing){\Database::query("UPDATE cart_items SET item_type='combo_offer',quantity=1,price_breakdown=?,total_price=? WHERE id=?",[$snapshot,(float)$combo['combo_price'],(int)$existing['id']]);return ['ok'=>true,'cart_item_id'=>(int)$existing['id'],'already_exists'=>true];}
-        $id=\Database::insert("INSERT INTO cart_items(cart_id,item_type,combo_offer_id,product_id,quality_id,quantity,attribute_selections,design_choice,design_brief,notes,price_breakdown,total_price,created_at) VALUES(?,'combo_offer',?,NULL,NULL,1,'[]','combo','','',?,?,NOW())",[$cartId,$comboId,$snapshot,(float)$combo['combo_price']]);
+        if($existing){\Database::query("UPDATE cart_items SET item_type='combo_offer',quantity=1,design_choice=?,design_brief=?,price_breakdown=?,total_price=? WHERE id=?",[$designChoice,$designBrief,$snapshot,(float)$combo['combo_price'],(int)$existing['id']]); if($artworkId) \Database::query("UPDATE artwork_files SET cart_item_id=?,uploaded_by=COALESCE(uploaded_by,?) WHERE id=?",[(int)$existing['id'],$userId,$artworkId]); return ['ok'=>true,'cart_item_id'=>(int)$existing['id'],'already_exists'=>true];}
+        $id=\Database::insert("INSERT INTO cart_items(cart_id,item_type,combo_offer_id,product_id,quality_id,quantity,attribute_selections,design_choice,design_brief,notes,price_breakdown,total_price,created_at) VALUES(?,'combo_offer',?,NULL,NULL,1,'[]',?,?,'',?,?,NOW())",[$cartId,$comboId,$designChoice,$designBrief,$snapshot,(float)$combo['combo_price']]);
+        if($artworkId) \Database::query("UPDATE artwork_files SET cart_item_id=?,uploaded_by=COALESCE(uploaded_by,?) WHERE id=?",[(int)$id,$userId,$artworkId]);
         return ['ok'=>true,'cart_item_id'=>(int)$id];
     }
 
@@ -421,18 +439,20 @@ class Cart
         self::ensureCustomQuoteSchema();
         foreach ($guestItems as $item) {
             $isCustomQuote = ($item['item_type'] ?? 'product') === 'custom_quote';
+            $isComboOffer = ($item['item_type'] ?? 'product') === 'combo_offer';
             $newCartItemId = \Database::insert(
-                "INSERT INTO cart_items (cart_id, item_type, custom_quote_id, custom_quote_token, product_id, quality_id, quantity, attribute_selections,
+                "INSERT INTO cart_items (cart_id, item_type, custom_quote_id, custom_quote_token, combo_offer_id, product_id, quality_id, quantity, attribute_selections,
                   design_choice, design_brief, notes, price_breakdown, total_price, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
                 [
                     $cartId,
-                    $isCustomQuote ? 'custom_quote' : 'product',
+                    $isCustomQuote ? 'custom_quote' : ($isComboOffer ? 'combo_offer' : 'product'),
                     $isCustomQuote ? (int)($item['custom_quote_id'] ?? 0) : null,
                     $isCustomQuote ? (string)($item['custom_quote_token'] ?? '') : null,
-                    $isCustomQuote ? null : (int)($item['product_id'] ?? 0),
-                    $isCustomQuote ? null : (int)($item['quality_id'] ?? 1),
-                    $isCustomQuote ? 1 : (int)($item['quantity'] ?? 0),
+                    $isComboOffer ? (int)($item['combo_offer_id'] ?? 0) : null,
+                    ($isCustomQuote || $isComboOffer) ? null : (int)($item['product_id'] ?? 0),
+                    ($isCustomQuote || $isComboOffer) ? null : (int)($item['quality_id'] ?? 1),
+                    ($isCustomQuote || $isComboOffer) ? 1 : (int)($item['quantity'] ?? 0),
                     $item['attribute_selections'] ?? '[]',
                     $item['design_choice'] ?? 'upload',
                     $item['design_brief'] ?? '',
@@ -472,6 +492,15 @@ class Cart
     private static function normalizeComboOfferItem(array &$item): void
     {
         if (($item['item_type'] ?? '') !== 'combo_offer') return;
+        $combo = \Combos\ComboOfferManager::find((int)($item['combo_offer_id'] ?? 0));
+        if (!$combo || empty($combo['is_active'])) {
+            $item['total_price'] = 0; $item['combo_unavailable'] = true;
+        } else {
+            $snapshot = ['combo_offer_id'=>(int)$combo['id'],'regular_price'=>(float)$combo['regular_price'],'discount_percent'=>(float)$combo['discount_percent'],'saving'=>max(0,(float)$combo['regular_price']-(float)$combo['combo_price']),'items'=>$combo['items'],'custom_items'=>$combo['custom_items']??[]];
+            $item['price_breakdown'] = json_encode($snapshot, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+            $item['total_price'] = (float)$combo['combo_price'];
+            $item['combo_offer_title'] = $combo['title']; $item['combo_offer_image'] = $combo['banner_image'];
+        }
         $item['product_name'] = $item['combo_offer_title'] ?: 'Combo Offer';
         $item['product_image'] = $item['combo_offer_image'] ?: '/assets/images/RCS%20PRINT%20LOGO.png';
         $item['quality_name'] = 'Combo Offer'; $item['slug']=''; $item['quantity']=1;

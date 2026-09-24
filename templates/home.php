@@ -239,23 +239,15 @@ foreach ($categories as $cat) {
 </section>
 
 <?php if (!empty($comboOffers ?? [])): ?>
-<section class="home-combos" aria-labelledby="homeComboTitle" data-reveal>
-  <div class="container">
-    <h2 id="homeComboTitle">Scale Your Order, <span>Maximize Savings</span></h2>
-    <div class="home-combo-mosaic">
-      <?php foreach (array_slice($comboOffers,0,4) as $index=>$offer): $slot=$index===0?'large':($index===1?'wide':'square'); ?>
-      <a class="home-combo-card home-combo-card--<?= $slot ?>" href="/combo/<?= htmlspecialchars((string)$offer['slug']) ?>" style="--combo-image:url('<?= htmlspecialchars((string)($offer['banner_image']??''),ENT_QUOTES) ?>')">
-        <span class="home-combo-shade"></span><span class="home-combo-copy">
-          <?php if (!empty($offer['badge']) && (int)($offer['show_badge'] ?? 1) === 1): ?><small><?= htmlspecialchars((string)$offer['badge']) ?></small><?php endif; ?>
-          <?php if ((int)($offer['show_title'] ?? 1) === 1): ?><strong><?= htmlspecialchars((string)$offer['title']) ?></strong><?php endif; ?>
-          <?php if (!empty($offer['short_description']) && (int)($offer['show_short_description'] ?? 1) === 1): ?><em><?= htmlspecialchars((string)$offer['short_description']) ?></em><?php endif; ?>
-          <?php if ((int)($offer['show_cta'] ?? 1) === 1): ?><b><?= htmlspecialchars((string)($offer['cta_text'] ?: 'View Offer')) ?> →</b><?php endif; ?>
-        </span>
-      </a>
-      <?php endforeach; ?>
-    </div>
-  </div>
-</section>
+<section class="home-combos" aria-labelledby="homeComboTitle" data-reveal><div class="container"><h2 id="homeComboTitle">Scale Your Order, <span>Maximize Savings</span></h2><div class="home-combo-mosaic">
+<?php foreach ($comboOffers as $offer): $slot=in_array(($offer['layout_slot']??''),['large','wide','square_3','square_4'],true)?$offer['layout_slot']:'square_3'; ?>
+<a class="home-combo-card home-combo-card--<?= htmlspecialchars($slot) ?>" href="/combo/<?= htmlspecialchars((string)$offer['slug']) ?>"><img class="home-combo-image" src="<?= htmlspecialchars((string)($offer['banner_image']?:'/assets/images/RCS%20PRINT%20LOGO.png')) ?>" alt="<?= htmlspecialchars((string)$offer['title']) ?>"><span class="home-combo-copy">
+<?php if (!empty($offer['badge']) && (int)($offer['show_badge_home'] ?? $offer['show_badge'] ?? 1)): ?><small><?= htmlspecialchars((string)$offer['badge']) ?></small><?php endif; ?>
+<?php if ((int)($offer['show_title_home'] ?? $offer['show_title'] ?? 1)): ?><strong><?= htmlspecialchars((string)$offer['title']) ?></strong><?php endif; ?>
+<?php if (!empty($offer['short_description']) && (int)($offer['show_short_description_home'] ?? $offer['show_short_description'] ?? 1)): ?><em><?= htmlspecialchars((string)$offer['short_description']) ?></em><?php endif; ?>
+<?php if (!empty($offer['description']) && (int)($offer['show_description_home'] ?? $offer['show_description'] ?? 1)): ?><em><?= nl2br(htmlspecialchars((string)$offer['description'])) ?></em><?php endif; ?>
+<?php if ((int)($offer['show_cta_home'] ?? $offer['show_cta'] ?? 1)): ?><b><?= htmlspecialchars((string)($offer['cta_text']?:'View Offer')) ?> →</b><?php endif; ?>
+</span></a><?php endforeach; ?></div></div></section>
 <?php endif; ?>
 
 <!-- BEST DEALS -->

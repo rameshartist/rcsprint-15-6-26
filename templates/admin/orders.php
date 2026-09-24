@@ -247,7 +247,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
               $customNote = trim((string)($item['custom_quote_note'] ?: $item['notes'] ?: $item['design_brief'] ?: ''));
             ?>
             <div class="ord-custom-detail-row" data-custom-order-item>
-              <div class="ord-custom-image"><span>Product Image</span><div class="ord-custom-thumb" id="customThumb<?= $customQuoteId ?>"><?php if ($productImg !== ''): ?><img src="<?= htmlspecialchars($productImg) ?>" alt="<?= htmlspecialchars($customName) ?>"><?php else: ?>📦<?php endif; ?></div><?php if ($customQuoteId): ?><label class="btn btn-outline btn-sm">Upload<input type="file" hidden accept="image/jpeg,image/png,image/webp" onchange="uploadCustomOrderImage(<?= $customQuoteId ?>,this)"></label><?php endif; ?></div>
+              <div class="ord-custom-image"><span>Custom Quote</span><div class="ord-custom-thumb"><?php if ($productImg !== ''): ?><img src="<?= htmlspecialchars($productImg) ?>" alt="<?= htmlspecialchars($customName) ?>"><?php else: ?>📦<?php endif; ?></div><?php if ($customQuoteId): ?><a class="btn btn-outline btn-sm" href="/admin/custom-orders#quote-<?= $customQuoteId ?>"><?= htmlspecialchars((string)($item['custom_quote_code'] ?? ('CQ-' . str_pad((string)$customQuoteId, 4, '0', STR_PAD_LEFT)))) ?></a><?php endif; ?></div>
               <div><span>Product Name</span><strong><?= htmlspecialchars($customName) ?></strong></div>
               <div><span>Size / Dimensions</span><strong><?= htmlspecialchars($customSize ?: 'Not set') ?></strong></div>
               <div><span>Material</span><strong><?= htmlspecialchars($customMaterial ?: 'Not set') ?></strong></div>
@@ -256,7 +256,10 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
               <div><span>Design Fee</span><strong>₹<?= number_format($customDesignFee, 2) ?></strong></div>
               <div class="ord-custom-note"><span>Admin Quote Note</span><p><?= nl2br(htmlspecialchars($customNote ?: 'No quote note added.')) ?></p></div>
             </div>
-            <?php else: ?>
+            <?php endif; ?>
+            <?php if (($item['item_type'] ?? '') === 'combo_offer'): $comboSnapshot=is_array($item['price_breakdown']??null)?$item['price_breakdown']:[]; ?>
+            <div class="ord-combo-detail"><div class="ord-combo-title"><img src="<?= htmlspecialchars($productImg ?: '/assets/images/RCS%20PRINT%20LOGO.png') ?>" alt=""><div><span>Combo Offer</span><strong><?= htmlspecialchars((string)$item['product_name']) ?></strong><small>Paid item price: ₹<?= number_format((float)$item['total_price'],2) ?> · Saving: ₹<?= number_format((float)($comboSnapshot['saving']??0),2) ?></small></div></div><div class="ord-combo-components"><?php foreach(($comboSnapshot['items']??[]) as $component): ?><span><b><?= htmlspecialchars((string)($component['product_name']??'Product')) ?></b><?= number_format((int)($component['quantity']??1)) ?> qty · ₹<?= number_format((float)($component['regular_price']??0),2) ?></span><?php endforeach;?><?php foreach(($comboSnapshot['custom_items']??[]) as $component): ?><span><b><?= htmlspecialchars((string)($component['item_name']??'Custom item')) ?></b><?= number_format((int)($component['quantity']??1)) ?> qty · ₹<?= number_format((float)($component['item_price']??0),2) ?> each</span><?php endforeach;?></div></div>
+            <?php endif; ?>
             <div class="ord-item-row ord-design-workflow ord-design-workflow--<?= htmlspecialchars($approvalStatus) ?> <?= !$isRcsDesign ? 'ord-design-workflow--customer-upload' : 'ord-design-workflow--rcs' ?>">
               <div class="ord-design-head">
                 <div class="ord-item-product">
@@ -316,7 +319,6 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
                 </div>
               <?php endif; ?>
             </div>
-            <?php endif; ?>
           <?php endforeach; ?>
         </section>
         <section class="adm-order-card-section adm-order-card-section--full adm-order-action-strip">
@@ -702,6 +704,5 @@ function closeAddrModal() {
   }
 })();
 
-async function uploadCustomOrderImage(quoteId,input){const file=input.files?.[0];if(!file)return;input.disabled=true;const fd=new FormData();fd.append('image',file);try{const response=await fetch(`/admin/api/custom-orders/${quoteId}/product-image`,{method:'POST',headers:{'X-CSRF-TOKEN':'<?= htmlspecialchars($csrf ?? '') ?>'},body:fd});const result=await response.json();if(!response.ok||!result.ok)throw new Error(result.msg||'Upload failed');const thumb=document.getElementById(`customThumb${quoteId}`);if(thumb)thumb.innerHTML=`<img src="${result.path}" alt="Custom product">`;toast('Custom order image uploaded','success')}catch(error){toast(error.message||'Upload failed','error')}finally{input.disabled=false;input.value=''}}
 </script>
 </body></html>

@@ -29,6 +29,8 @@ class OrderManager
                 "ALTER TABLE order_items ADD COLUMN item_type VARCHAR(30) NOT NULL DEFAULT 'product' AFTER order_id",
                 "ALTER TABLE order_items ADD COLUMN custom_quote_id INT UNSIGNED NULL AFTER item_type",
                 "ALTER TABLE order_items ADD COLUMN custom_product_image VARCHAR(500) NULL AFTER custom_quote_id",
+                "ALTER TABLE order_items ADD COLUMN combo_offer_id INT UNSIGNED NULL AFTER custom_product_image",
+                "CREATE INDEX idx_order_items_combo_offer ON order_items (combo_offer_id)",
                 "CREATE INDEX idx_order_items_custom_quote ON order_items (custom_quote_id)",
                 "ALTER TABLE custom_quote_requests ADD COLUMN product_image VARCHAR(500) NULL AFTER product_name",
             ] as $sql) { try { \Database::query($sql); } catch (\Throwable) {} }
@@ -387,6 +389,7 @@ class OrderManager
 
         $cartItems = \Cart\Cart::get();
         if (empty($cartItems)) return ['ok' => false, 'msg' => 'Cart is empty'];
+        if (array_filter($cartItems, static fn($item) => !empty($item['combo_unavailable']))) return ['ok'=>false,'msg'=>'A Combo Offer in your cart is no longer available.'];
 
         // Mixed carts are placed as one order. Fixed custom quotes must never receive a coupon.
         $hasCustomQuoteInCart = (bool)array_filter($cartItems, static fn($item) => (int)($item['custom_quote_id'] ?? 0) > 0);
@@ -450,15 +453,16 @@ class OrderManager
                 $itemType = (string)($item['item_type'] ?? 'product');
                 $isCatalogProduct = $itemType === 'product';
                 $orderItemId = \Database::insert(
-                    "INSERT INTO order_items (order_id, item_type, custom_quote_id, custom_product_image, product_id, quality_id, quantity,
+                    "INSERT INTO order_items (order_id, item_type, custom_quote_id, custom_product_image, combo_offer_id, product_id, quality_id, quantity,
                         product_name, quality_name, attribute_selections, design_choice,
                         design_brief, notes, price_breakdown, total_price, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [
                         $dbOrderId,
                         in_array($itemType, ['custom_quote','combo_offer'], true) ? $itemType : 'product',
                         !empty($item['custom_quote_id']) ? (int)$item['custom_quote_id'] : null,
                         $itemType === 'custom_quote' ? (string)($item['product_image'] ?? '') : null,
+                        !empty($item['combo_offer_id']) ? (int)$item['combo_offer_id'] : null,
                         $isCatalogProduct ? (int)($item['product_id'] ?? 0) : null,
                         $isCatalogProduct ? (int)($item['quality_id'] ?? 1) : null,
                         (int)($item['quantity'] ?? 1),
@@ -805,7 +809,8 @@ class OrderManager
 
         $order['items'] = \Database::rows(
             "SELECT oi.*,
-                    COALESCE(cqr.product_image, oi.custom_product_image, pi.image_path, pi.url) AS product_image,
+                    COALESCE(cqr.product_image, oi.custom_product_image, co.banner_image, pi.image_path, pi.url) AS product_image,
+                    cqr.request_code AS custom_quote_code,
                     cqr.product_name AS custom_product_name,
                     cqr.size_dimension AS custom_size_dimension,
                     cqr.material_type AS custom_material_type,
@@ -831,6 +836,7 @@ class OrderManager
              FROM order_items oi
              LEFT JOIN product_images pi ON pi.product_id = oi.product_id AND pi.is_primary = 1
              LEFT JOIN custom_quote_requests cqr ON cqr.id = oi.custom_quote_id
+             LEFT JOIN combo_offers co ON co.id = oi.combo_offer_id
              LEFT JOIN order_design_approvals oda ON oda.order_item_id = oi.id
              LEFT JOIN artwork_files af ON af.id = oda.customer_artwork_file_id
              LEFT JOIN artwork_files pf ON pf.id = oda.proof_file_id

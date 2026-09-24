@@ -457,7 +457,7 @@ if ($uri === '/api/cart/add' && $method === 'POST') {
     json($result);
 }
 if ($uri === '/api/cart/combo' && $method === 'POST') {
-    json(\Cart\Cart::addComboOffer((int)($body['combo_offer_id'] ?? 0)));
+    json(\Cart\Cart::addComboOffer((int)($body['combo_offer_id'] ?? 0), $body));
 }
 
 if (preg_match('#^/api/cart/remove/(.+)$#', $uri, $m) && $method === 'DELETE') {
@@ -585,6 +585,7 @@ if ($uri === '/api/payment/create-order' && $method === 'POST') {
     $ensure = \Auth\Auth::ensureCheckoutUser($body['customer'] ?? []);
     if (!$ensure['ok']) json($ensure, 400);
     $items  = \Cart\Cart::get();
+    if (array_filter($items, static fn($item) => !empty($item['combo_unavailable']))) json(['ok'=>false,'msg'=>'A Combo Offer in your cart is no longer available. Please remove it and try again.'],422);
     $hasCustomQuote = (bool)array_filter($items, static fn($item) => (int)($item['custom_quote_id'] ?? 0) > 0);
     $coupon = $hasCustomQuote ? null : ($body['coupon_code'] ?? null);
     $totals = \Cart\Cart::totals($items, $coupon);
