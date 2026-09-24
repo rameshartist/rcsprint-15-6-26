@@ -232,6 +232,31 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
               $proofPath = $normalizeAssetPath($item['design_proof_file_path'] ?? '');
               $proofIsImage = $isImageFile($item['design_proof_mime_type'] ?? '', $proofName, $proofPath);
             ?>
+            <?php $isCustomItem = ($item['item_type'] ?? '') === 'custom_quote' || !empty($item['custom_quote_id']); ?>
+            <?php if ($isCustomItem): ?>
+            <?php
+              $customAttributes = is_array($item['attribute_selections'] ?? null) ? $item['attribute_selections'] : [];
+              $customPrice = is_array($item['price_breakdown'] ?? null) ? $item['price_breakdown'] : [];
+              $customQuoteId = (int)($item['custom_quote_id'] ?? 0);
+              $customName = (string)($item['custom_product_name'] ?: $item['product_name'] ?: 'Custom Product');
+              $customSize = (string)($item['custom_size_dimension'] ?: ($customAttributes['size_dimension'] ?? ''));
+              $customMaterial = (string)($item['custom_material_type'] ?: ($customAttributes['material_type'] ?? ''));
+              $customQuantity = (string)($item['custom_quantity'] ?: ($customAttributes['requested_quantity'] ?? $item['quantity'] ?? ''));
+              $customAmount = (float)($item['custom_amount'] ?? $customPrice['base_price'] ?? $item['total_price'] ?? 0);
+              $customDesignFee = (float)($item['custom_design_fee'] ?? $customPrice['design_fee'] ?? 0);
+              $customNote = trim((string)($item['custom_quote_note'] ?: $item['notes'] ?: $item['design_brief'] ?: ''));
+            ?>
+            <div class="ord-custom-detail-row" data-custom-order-item>
+              <div class="ord-custom-image"><span>Product Image</span><div class="ord-custom-thumb" id="customThumb<?= $customQuoteId ?>"><?php if ($productImg !== ''): ?><img src="<?= htmlspecialchars($productImg) ?>" alt="<?= htmlspecialchars($customName) ?>"><?php else: ?>📦<?php endif; ?></div><?php if ($customQuoteId): ?><label class="btn btn-outline btn-sm">Upload<input type="file" hidden accept="image/jpeg,image/png,image/webp" onchange="uploadCustomOrderImage(<?= $customQuoteId ?>,this)"></label><?php endif; ?></div>
+              <div><span>Product Name</span><strong><?= htmlspecialchars($customName) ?></strong></div>
+              <div><span>Size / Dimensions</span><strong><?= htmlspecialchars($customSize ?: 'Not set') ?></strong></div>
+              <div><span>Material</span><strong><?= htmlspecialchars($customMaterial ?: 'Not set') ?></strong></div>
+              <div><span>Quantity</span><strong><?= htmlspecialchars($customQuantity ?: 'Not set') ?></strong></div>
+              <div><span>Amount</span><strong>₹<?= number_format($customAmount, 2) ?></strong></div>
+              <div><span>Design Fee</span><strong>₹<?= number_format($customDesignFee, 2) ?></strong></div>
+              <div class="ord-custom-note"><span>Admin Quote Note</span><p><?= nl2br(htmlspecialchars($customNote ?: 'No quote note added.')) ?></p></div>
+            </div>
+            <?php else: ?>
             <div class="ord-item-row ord-design-workflow ord-design-workflow--<?= htmlspecialchars($approvalStatus) ?> <?= !$isRcsDesign ? 'ord-design-workflow--customer-upload' : 'ord-design-workflow--rcs' ?>">
               <div class="ord-design-head">
                 <div class="ord-item-product">
@@ -291,6 +316,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
                 </div>
               <?php endif; ?>
             </div>
+            <?php endif; ?>
           <?php endforeach; ?>
         </section>
         <section class="adm-order-card-section adm-order-card-section--full adm-order-action-strip">
@@ -675,5 +701,7 @@ function closeAddrModal() {
     mobileQuery.addListener(syncPanels);
   }
 })();
+
+async function uploadCustomOrderImage(quoteId,input){const file=input.files?.[0];if(!file)return;input.disabled=true;const fd=new FormData();fd.append('image',file);try{const response=await fetch(`/admin/api/custom-orders/${quoteId}/product-image`,{method:'POST',headers:{'X-CSRF-TOKEN':'<?= htmlspecialchars($csrf ?? '') ?>'},body:fd});const result=await response.json();if(!response.ok||!result.ok)throw new Error(result.msg||'Upload failed');const thumb=document.getElementById(`customThumb${quoteId}`);if(thumb)thumb.innerHTML=`<img src="${result.path}" alt="Custom product">`;toast('Custom order image uploaded','success')}catch(error){toast(error.message||'Upload failed','error')}finally{input.disabled=false;input.value=''}}
 </script>
 </body></html>

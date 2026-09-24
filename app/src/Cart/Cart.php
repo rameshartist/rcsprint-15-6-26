@@ -302,7 +302,7 @@ class Cart
                 "SELECT ci.*, COALESCE(cqr.product_name, p.name) as product_name, p.slug,
                         p.category_id,
                         CASE WHEN ci.item_type='custom_quote' THEN 'Custom Quote' ELSE 'Standard' END as quality_name,
-                        pi.url as product_image,
+                        COALESCE(cqr.product_image, pi.url) as product_image,
                         cqr.request_code AS custom_quote_code, co.title AS combo_offer_title, co.banner_image AS combo_offer_image,
                         cqr.size_dimension AS custom_size_dimension,
                         cqr.material_type AS custom_material_type,

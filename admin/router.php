@@ -126,6 +126,7 @@ $ensureCustomQuoteSchema = static function (): void {
             phone VARCHAR(40) NOT NULL,
             email VARCHAR(180) NULL,
             product_name VARCHAR(180) NOT NULL,
+            product_image VARCHAR(500) NULL,
             size_dimension VARCHAR(160) NULL,
             material_type VARCHAR(160) NULL,
             quantity VARCHAR(80) NULL,
@@ -158,6 +159,7 @@ $ensureCustomQuoteSchema = static function (): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         foreach ([
             "ALTER TABLE custom_quote_requests ADD COLUMN admin_notes TEXT NULL AFTER status",
+            "ALTER TABLE custom_quote_requests ADD COLUMN product_image VARCHAR(500) NULL AFTER product_name",
             "ALTER TABLE custom_quote_requests ADD COLUMN quoted_amount DECIMAL(12,2) NULL AFTER admin_notes",
             "ALTER TABLE custom_quote_requests ADD COLUMN design_fee DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER quoted_amount",
             "ALTER TABLE custom_quote_requests ADD COLUMN currency VARCHAR(10) NOT NULL DEFAULT 'INR' AFTER quoted_amount",
@@ -1793,12 +1795,13 @@ if (str_starts_with($uri, '/admin/api/')) {
     }
 
 
-    if ($uri === '/admin/api/combo-offers' && $method === 'GET') { try { json(['ok'=>true,'offers'=>\Combos\ComboOfferManager::all(),'products'=>\Combos\ComboOfferManager::productsForAdmin()]); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>$e->getMessage()],500); } }
-    if ($uri === '/admin/api/combo-offers' && $method === 'POST') { try { json(\Combos\ComboOfferManager::save($body),200); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not save combo offer.'],500); } }
+    if ($uri === '/admin/api/combo-offers' && $method === 'GET') { try { json(['ok'=>true,'offers'=>\Combos\ComboOfferManager::all(false, trim((string)($_GET['q'] ?? ''))),'products'=>\Combos\ComboOfferManager::productsForAdmin(),'categories'=>Database::rows("SELECT id,name FROM categories WHERE is_active=1 ORDER BY name")]); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>$e->getMessage()],500); } }
+    if ($uri === '/admin/api/combo-offers' && $method === 'POST') { \Auth\Auth::verifyCsrf(); try { json(\Combos\ComboOfferManager::save($body),200); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not save combo offer.'],500); } }
     if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && $method === 'GET') { $offer=\Combos\ComboOfferManager::find((int)$m[1]); json(['ok'=>(bool)$offer,'offer'=>$offer],$offer?200:404); }
-    if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && in_array($method,['PUT','POST'],true)) { try { json(\Combos\ComboOfferManager::save($body,(int)$m[1])); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not update combo offer.'],500); } }
-    if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && $method === 'DELETE') { \Combos\ComboOfferManager::delete((int)$m[1]); json(['ok'=>true]); }
-    if ($uri === '/admin/api/combo-offers/upload' && $method === 'POST') { $file=$_FILES['image']??null; if(!$file||$file['error']!==UPLOAD_ERR_OK) json(['ok'=>false,'msg'=>'Choose an image.'],422); $ext=strtolower(pathinfo($file['name'],PATHINFO_EXTENSION)); if(!in_array($ext,['jpg','jpeg','png','webp'],true)) json(['ok'=>false,'msg'=>'JPG, PNG or WEBP only.'],422); $dir=PUBLIC_PATH.'/uploads/combos/'; if(!is_dir($dir)) mkdir($dir,0755,true); $name='combo-'.bin2hex(random_bytes(8)).'.'.$ext; if(!move_uploaded_file($file['tmp_name'],$dir.$name)) json(['ok'=>false,'msg'=>'Upload failed.'],500); json(['ok'=>true,'path'=>'/uploads/combos/'.$name]); }
+    if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && in_array($method,['PUT','POST'],true)) { \Auth\Auth::verifyCsrf(); try { json(\Combos\ComboOfferManager::save($body,(int)$m[1])); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not update combo offer.'],500); } }
+    if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && $method === 'DELETE') { \Auth\Auth::verifyCsrf(); \Combos\ComboOfferManager::delete((int)$m[1]); json(['ok'=>true]); }
+    if (preg_match('#^/admin/api/combo-offers/(\d+)/toggle$#',$uri,$m) && $method === 'POST') { \Auth\Auth::verifyCsrf(); $offer=\Combos\ComboOfferManager::find((int)$m[1]); if(!$offer) json(['ok'=>false,'msg'=>'Combo offer not found'],404); $active=empty($offer['is_active'])?1:0; Database::query("UPDATE combo_offers SET is_active=?,updated_at=NOW() WHERE id=?",[$active,(int)$m[1]]); json(['ok'=>true,'is_active'=>$active]); }
+    if ($uri === '/admin/api/combo-offers/upload' && $method === 'POST') { \Auth\Auth::verifyCsrf(); $file=$_FILES['image']??null; if(!$file||$file['error']!==UPLOAD_ERR_OK||!is_uploaded_file($file['tmp_name'])) json(['ok'=>false,'msg'=>'Choose an image.'],422); if((int)$file['size']<=0||(int)$file['size']>6*1024*1024) json(['ok'=>false,'msg'=>'Image must be under 6 MB.'],422); $ext=strtolower(pathinfo($file['name'],PATHINFO_EXTENSION)); $mime=mime_content_type($file['tmp_name'])?:''; if(!in_array($ext,['jpg','jpeg','png','webp'],true)||!in_array($mime,['image/jpeg','image/png','image/webp'],true)) json(['ok'=>false,'msg'=>'JPG, PNG or WEBP only.'],422); $dir=PUBLIC_PATH.'/uploads/combos/'; if(!is_dir($dir)) mkdir($dir,0755,true); $name='combo-'.bin2hex(random_bytes(8)).'.'.$ext; if(!move_uploaded_file($file['tmp_name'],$dir.$name)) json(['ok'=>false,'msg'=>'Upload failed.'],500); json(['ok'=>true,'path'=>'/uploads/combos/'.$name]); }
 
     if ($uri === '/admin/api/deals' && $method === 'GET') {
         try {
@@ -2101,6 +2104,22 @@ if (str_starts_with($uri, '/admin/api/')) {
     if (preg_match('#^/admin/api/custom-orders/(\d+)/attention/clear$#', $uri, $m) && $method === 'POST') {
         Database::query("UPDATE custom_quote_requests SET customer_update_pending=0,customer_update_type=NULL,customer_update_at=NULL WHERE id=?",[(int)$m[1]]);
         json(['ok'=>true]);
+    }
+    if (preg_match('#^/admin/api/custom-orders/(\d+)/product-image$#', $uri, $m) && $method === 'POST') { \Auth\Auth::verifyCsrf();
+        $quote = Database::row("SELECT id,product_image FROM custom_quote_requests WHERE id=?", [(int)$m[1]]);
+        if (!$quote) json(['ok'=>false,'msg'=>'Custom order not found'],404);
+        $file=$_FILES['image']??null;
+        if(!$file||$file['error']!==UPLOAD_ERR_OK||!is_uploaded_file($file['tmp_name'])) json(['ok'=>false,'msg'=>'Choose an image.'],422);
+        if((int)$file['size']<=0||(int)$file['size']>6*1024*1024) json(['ok'=>false,'msg'=>'Image must be under 6 MB.'],422);
+        $ext=strtolower(pathinfo((string)$file['name'],PATHINFO_EXTENSION)); $mime=mime_content_type($file['tmp_name'])?:'';
+        if(!in_array($ext,['jpg','jpeg','png','webp'],true)||!in_array($mime,['image/jpeg','image/png','image/webp'],true)) json(['ok'=>false,'msg'=>'Only JPG, PNG and WEBP images are allowed.'],422);
+        $dir=PUBLIC_PATH.'/uploads/custom-orders/'; if(!is_dir($dir)) @mkdir($dir,0755,true);
+        $name='custom-order-'.(int)$m[1].'-'.bin2hex(random_bytes(6)).'.'.$ext;
+        if(!move_uploaded_file($file['tmp_name'],$dir.$name)) json(['ok'=>false,'msg'=>'Upload failed.'],500);
+        $path='/uploads/custom-orders/'.$name; Database::query("UPDATE custom_quote_requests SET product_image=?,updated_at=NOW() WHERE id=?",[$path,(int)$m[1]]);
+        try { Database::query("UPDATE order_items SET custom_product_image=? WHERE custom_quote_id=?",[$path,(int)$m[1]]); } catch (\Throwable) {}
+        $old=(string)($quote['product_image']??''); if(str_starts_with($old,'/uploads/custom-orders/')&&$old!==$path&&is_file(PUBLIC_PATH.$old)) @unlink(PUBLIC_PATH.$old);
+        json(['ok'=>true,'path'=>$path]);
     }
 
     if ($uri === '/admin/api/business-needs' && $method === 'GET') {
@@ -2981,7 +3000,10 @@ if ($uri === '/admin/orders') {
         $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
         $allItems = Database::rows(
             "SELECT oi.*,
-                    COALESCE(pi.image_path, pi.url) AS product_image,
+                    COALESCE(cqr.product_image, oi.custom_product_image, pi.image_path, pi.url) AS product_image,
+                    cqr.product_name AS custom_product_name, cqr.size_dimension AS custom_size_dimension,
+                    cqr.material_type AS custom_material_type, cqr.quantity AS custom_quantity,
+                    cqr.quoted_amount AS custom_amount, cqr.design_fee AS custom_design_fee, cqr.quote_note AS custom_quote_note,
                     af.id AS artwork_file_id,
                     af.original_name AS artwork_original_name,
                     af.filename AS artwork_filename,
@@ -2999,6 +3021,7 @@ if ($uri === '/admin/orders') {
                     pf.mime_type AS design_proof_mime_type
              FROM order_items oi
              LEFT JOIN product_images pi ON pi.product_id = oi.product_id AND pi.is_primary = 1
+             LEFT JOIN custom_quote_requests cqr ON cqr.id = oi.custom_quote_id
              LEFT JOIN order_design_approvals oda ON oda.order_item_id = oi.id
              LEFT JOIN artwork_files af ON af.id = oda.customer_artwork_file_id
              LEFT JOIN artwork_files pf ON pf.id = oda.proof_file_id
@@ -3011,7 +3034,9 @@ if ($uri === '/admin/orders') {
     foreach ($orders as &$o) {
         $o['items'] = $itemsByOrder[(int)$o['id']] ?? [];
         foreach ($o['items'] as &$item) {
-            if (empty($item['design_approval_id'])) {
+            $item['attribute_selections'] = json_decode((string)($item['attribute_selections'] ?? '[]'), true) ?: [];
+            $item['price_breakdown'] = json_decode((string)($item['price_breakdown'] ?? '{}'), true) ?: [];
+            if (empty($item['design_approval_id']) && ($item['item_type'] ?? 'product') === 'product') {
                 $customerArtwork = Database::row(
                     "SELECT af.id FROM artwork_files af
                       WHERE af.order_item_id = ?
@@ -3168,6 +3193,9 @@ if (preg_match('#^/admin/portfolio/edit/(\d+)$#', $uri, $m) && $method === 'GET'
     view('admin/portfolio-new', ['portfolioEditId' => (int)$m[1]]);
     exit;
 }
+
+if ($uri === '/admin/combo-offers/new' && $method === 'GET') { view('admin/combo-offers-form', ['comboEditId'=>0]); exit; }
+if (preg_match('#^/admin/combo-offers/edit/(\d+)$#', $uri, $m) && $method === 'GET') { view('admin/combo-offers-form', ['comboEditId'=>(int)$m[1]]); exit; }
 
 if (preg_match('#^/admin/deals/edit/(\d+)$#', $uri, $m) && $method === 'GET') {
     view('admin/deals-new', ['dealEditId' => (int)$m[1]]);
