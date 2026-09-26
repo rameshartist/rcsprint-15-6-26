@@ -151,6 +151,8 @@ if ($uri === '/' && $method === 'GET') {
         $products    = \Catalog\ProductCatalog::all();
         $homeBanners = Database::rows("SELECT * FROM home_banners WHERE is_active=1 ORDER BY sort_order ASC, id DESC");
         $homeDeals   = [];
+        $comboOffers = [];
+        try { $comboOffers = \Combos\ComboOfferManager::home(); } catch (\Throwable $e) { error_log('Home combo offers unavailable: '.$e->getMessage()); }
         try {
             $homeDeals = Database::rows("SELECT * FROM home_deals WHERE is_active=1 ORDER BY sort_order ASC, id DESC");
         } catch (\Throwable $e) {
@@ -176,13 +178,20 @@ if ($uri === '/' && $method === 'GET') {
         $categories = $products = [];
         $homeBanners = [];
         $homeDeals = [];
+        $comboOffers = [];
         $homeBlogs = [];
         $businessNeeds = [];
         $settingsMap = [];
         $homeReviews = [];
     }
-    view('home', compact('categories', 'products', 'settingsMap', 'homeBanners', 'homeDeals', 'homeBlogs', 'homeReviews', 'businessNeeds'));
+    view('home', compact('categories', 'products', 'settingsMap', 'homeBanners', 'homeDeals', 'comboOffers', 'homeBlogs', 'homeReviews', 'businessNeeds'));
     exit;
+}
+
+if (preg_match('#^/combo/([a-z0-9-]+)$#', $uri, $m) && $method === 'GET') {
+    try { $combo = \Combos\ComboOfferManager::findBySlug($m[1]); } catch (\Throwable) { $combo = null; }
+    if (!$combo) { http_response_code(404); view('404'); exit; }
+    view('combo-offer', compact('combo')); exit;
 }
 
 
@@ -521,14 +530,24 @@ if ($uri === '/profile' && $method === 'GET') {
     \Auth\Auth::require();
     $user = \Auth\Auth::user();
     $profile = \Auth\Auth::getProfile((int)$user['id']);
-    try { $orders = \Orders\OrderManager::getUserOrders((int)$user['id']); }
-    catch (\Throwable) { $orders = []; }
-    try { $customOrders=Database::rows("SELECT * FROM custom_quote_requests WHERE user_id=? ORDER BY created_at DESC",[(int)$user['id']]); } catch (\Throwable) { $customOrders=[]; }
+    try { $allOrders = \Orders\OrderManager::getUserOrders((int)$user['id']); }
+    catch (\Throwable) { $allOrders = []; }
+    $orders = array_values(array_filter($allOrders, static fn(array $order): bool =>
+        (string)($order['order_type'] ?? 'normal') !== 'custom' && (int)($order['custom_quote_id'] ?? 0) === 0
+    ));
+    $customFulfillmentOrders = array_values(array_filter($allOrders, static fn(array $order): bool =>
+        ((string)($order['order_type'] ?? 'normal') === 'custom' || (int)($order['custom_quote_id'] ?? 0) > 0)
+        && (string)($order['payment_status'] ?? '') === 'paid'
+    ));
+    // A quote remains in the cart/quote workflow until payment is captured. Only
+    // confirmed paid custom orders belong in the customer's order history.
+    try { $customOrders=Database::rows("SELECT * FROM custom_quote_requests WHERE user_id=? AND payment_status='paid' AND status IN ('paid','converted_to_order') AND order_id IS NOT NULL ORDER BY created_at DESC",[(int)$user['id']]); } catch (\Throwable) { $customOrders=[]; }
     $reviewableItems = \Reviews\ProductReview::reviewableItemsForUser((int)$user['id']);
     $myReviews = \Reviews\ProductReview::userReviews((int)$user['id']);
     $wishlistItems = \Wishlist\Wishlist::itemsForUser((int)$user['id']);
     $myDesigns = \Designs\UserDesigns::forUser((int)$user['id']);
-    view('profile', compact('user', 'profile', 'orders', 'customOrders', 'reviewableItems', 'myReviews', 'wishlistItems', 'myDesigns'));
+    try { Database::query("CREATE TABLE IF NOT EXISTS user_addresses (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id INT UNSIGNED NOT NULL,label VARCHAR(80) NOT NULL DEFAULT 'Address',business_name VARCHAR(180) NULL,address_line1 VARCHAR(255) NOT NULL,address_line2 VARCHAR(255) NULL,city VARCHAR(120) NOT NULL,state VARCHAR(120) NOT NULL,pincode VARCHAR(20) NOT NULL,is_default TINYINT(1) NOT NULL DEFAULT 0,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,KEY idx_user_addresses_user (user_id,is_default,id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); $savedAddresses=Database::rows("SELECT * FROM user_addresses WHERE user_id=? ORDER BY is_default DESC,id DESC",[(int)$user['id']]); } catch (\Throwable) { $savedAddresses=[]; }
+    view('profile', compact('user', 'profile', 'orders', 'customOrders', 'customFulfillmentOrders', 'savedAddresses', 'reviewableItems', 'myReviews', 'wishlistItems', 'myDesigns'));
     exit;
 }
 
@@ -677,16 +696,33 @@ if ($uri === '/contact' && $method === 'GET') {
 }
 
 
-// Dedicated custom cart and checkout links. Custom quotes never mix with the normal cart checkout.
-if (preg_match('#^/(custom-cart|custom-checkout)/([A-Za-z0-9_-]{24,120})$#', $uri, $m) && $method === 'GET') {
-    $mode=$m[1]; $token=$m[2];
+// Legacy custom links add the approved quote to the persistent cart, then use the unified checkout.
+if (preg_match('#^/(custom-cart|custom-checkout)/([^/]+)/?$#', $uri, $m) && $method === 'GET') {
+    $mode=$m[1]; $token=trim(rawurldecode($m[2]));
+    if ($token === '' || strlen($token) > 160) {
+        http_response_code(410);
+        view('info-page',['page'=>['title'=>'Custom order link invalid','intro'=>'Please ask our team to resend your custom order payment link.'],'settingsMap'=>[]]);
+        exit;
+    }
     try { $quote=Database::row("SELECT * FROM custom_quote_requests WHERE quote_token=? LIMIT 1",[$token]);
-        if(!$quote || (float)($quote['quoted_amount']??0)<=0 || in_array((string)($quote['status']??''),['converted_to_order','closed','rejected'],true)){http_response_code(404);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>'This custom order link is no longer available.'],'settingsMap'=>[]]);exit;}
+        if(!$quote){http_response_code(410);view('info-page',['page'=>['title'=>'Custom order link expired','intro'=>'Please ask our team to resend your custom order payment link.'],'settingsMap'=>[]]);exit;}
+        $quoteStatus=(string)($quote['status']??''); $quotePaymentStatus=(string)($quote['payment_status']??'not_required');
+        if($quotePaymentStatus==='paid'){redirect('/profile#custom-orders');}
+        if((float)($quote['quoted_amount']??0)<=0 || in_array($quoteStatus,['closed','rejected'],true)){http_response_code(410);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>'This custom order is closed. Please contact our team for assistance.'],'settingsMap'=>[]]);exit;}
+        // Repair legacy records that were marked confirmed before payment was
+        // actually captured. They must remain payable and available in cart.
+        if(in_array($quoteStatus,['paid','converted_to_order'],true) && $quotePaymentStatus!=='paid'){
+            Database::query("UPDATE custom_quote_requests SET status='payment_pending',payment_status='payment_pending',updated_at=NOW() WHERE id=?",[(int)$quote['id']]);
+            $quote['status']='payment_pending'; $quote['payment_status']='payment_pending';
+        }
         if(!\Auth\Auth::check()) redirect('/login?next=/'.$mode.'/'.rawurlencode($token));
         $user=\Auth\Auth::user(); if((int)($quote['user_id']??0)!==(int)$user['id']){http_response_code(403);view('info-page',['page'=>['title'=>'Account required','intro'=>'Please login with the account linked to this custom order.'],'settingsMap'=>[]]);exit;}
         $added=\Cart\Cart::addCustomQuote($quote,(int)$user['id']); if(!($added['ok']??false)){http_response_code(422);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>$added['msg']??'Please contact us.'],'settingsMap'=>[]]);exit;}
         $cartItems=array_values(array_filter(\Cart\Cart::get(),static fn($item)=>(int)($item['custom_quote_id']??0)===(int)$quote['id']));$totals=\Cart\Cart::totals($cartItems);
-        if($mode==='custom-cart'){view('custom-cart',compact('quote','cartItems','totals','user','token'));exit;} $isCustomCheckout=true;view('checkout',compact('quote','cartItems','totals','user','token','isCustomCheckout'));exit;
+        // The WhatsApp link is intentionally a cart link: let the customer
+        // review the persistent quote before continuing to its checkout.
+        if($mode==='custom-cart') redirect('/cart');
+        redirect('/checkout');
     }catch(\Throwable $e){error_log($e->getMessage());http_response_code(500);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>'Please try again later.'],'settingsMap'=>[]]);exit;}
 }
 

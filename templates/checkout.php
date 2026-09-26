@@ -1,5 +1,6 @@
 <?php
 $isCustomCheckout=!empty($isCustomCheckout); $customQuoteId=(int)($quote['id']??0);
+$hasCustomQuoteInCart = (bool)array_filter($cartItems ?? [], static fn($item) => (int)($item['custom_quote_id'] ?? 0) > 0);
 $pageTitle = $isCustomCheckout ? 'Custom Order Checkout — RCS Graphic' : 'Checkout — RCS Graphic';
 $loadRazorpay = true;
 include INCLUDE_PATH . '/partials/head.php';
@@ -49,6 +50,7 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
 
         <section class="checkout-card checkout-shipping-card">
           <div class="checkout-card-title"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i><h2>Shipping Address</h2></div>
+          <?php if (!empty($user['id'])): ?><label class="checkout-saved-address-select" id="saved-address-wrap" hidden>Choose a saved address<select id="saved-address-select" class="checkout-input" onchange="selectCheckoutAddress(this.value)"><option value="">Enter a new address</option></select></label><?php endif; ?>
           <div class="checkout-form-grid">
             <label class="checkout-full-field">Business / Full Name <b>*</b><input id="s-business" class="checkout-input" placeholder="Enter business or full name" autocomplete="organization"></label>
             <label>Address Line 1 <b>*</b><input id="s-add1" class="checkout-input" placeholder="House / Flat / Building / Street" autocomplete="address-line1"></label>
@@ -58,7 +60,7 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
             <label>PIN Code <b>*</b><input id="s-pin" class="checkout-input" placeholder="Enter PIN code" autocomplete="postal-code"></label>
           </div>
           <?php if (!empty($user['id'])): ?>
-          <label id="ship-save-wrap" class="checkout-checkline" style="display:none"><input type="checkbox" id="ship-save-default"> <span>Save this address for future use</span></label>
+          <label id="ship-save-wrap" class="checkout-checkline" style="display:none"><input type="checkbox" id="ship-save-default"> <span>Save this address in My Account for future use</span></label>
           <?php endif; ?>
           <div id="shipErr" class="checkout-error" style="display:none"></div>
         </section>
@@ -76,17 +78,6 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
             <label>PIN Code <b>*</b><input id="b-pin" class="checkout-input" placeholder="360001"></label>
           </div>
           <div id="billErr" class="checkout-error" style="display:none"></div>
-        </section>
-
-        <section class="checkout-card checkout-payment-card">
-          <div class="checkout-card-title"><i class="fa-regular fa-credit-card" aria-hidden="true"></i><h2>Payment Method <small>100% Secure Payments</small></h2></div>
-          <div class="checkout-payment-options" aria-label="Supported Razorpay payment options">
-            <label class="is-selected"><input type="radio" name="payVisual" checked><span><strong>UPI / QR Code</strong><small>Pay using any UPI app</small></span><em>UPI</em></label>
-            <label><input type="radio" name="payVisual"><span><strong>Credit / Debit Card</strong><small>Visa, Mastercard, RuPay</small></span><em>VISA • MC</em></label>
-            <label><input type="radio" name="payVisual"><span><strong>Net Banking</strong><small>All major banks supported</small></span><em><i class="fa-solid fa-building-columns" aria-hidden="true"></i></em></label>
-            <label><input type="radio" name="payVisual"><span><strong>Wallets</strong><small>PhonePe, Paytm, Amazon Pay &amp; more</small></span><em>Wallet</em></label>
-          </div>
-          <div class="checkout-secure-note"><i class="fa-solid fa-lock" aria-hidden="true"></i> Your payment information is secure with 256-bit SSL encryption.</div>
         </section>
 
         <section class="checkout-consent-actions">
@@ -118,20 +109,24 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
                 <?php else: ?>
                   <p><?= number_format((int)($item['quantity'] ?? 0)) ?> pcs<?= !empty($item['quality_name']) ? ' | ' . htmlspecialchars((string)$item['quality_name']) : '' ?></p>
                 <?php endif; ?>
+                <?php $itemBreakdown = is_array($item['price_breakdown'] ?? null) ? $item['price_breakdown'] : (json_decode((string)($item['price_breakdown'] ?? '{}'), true) ?: []); $itemDesignFee = (float)($itemBreakdown['design_fee'] ?? 0); ?>
                 <strong>₹<?= number_format((float)($item['total_price'] ?? 0)) ?></strong>
+                <?php if ($itemDesignFee > 0): ?><small>Includes ₹<?= number_format($itemDesignFee) ?> design fee</small><?php endif; ?>
               </div>
               <div class="checkout-item-side">
                 <span><?= number_format((int)($item['quantity'] ?? 0)) ?></span>
-                <?php if (!empty($item['id'])): ?><button type="button" onclick="removeCheckoutItem('<?= htmlspecialchars((string)$item['id'], ENT_QUOTES) ?>')" aria-label="Remove <?= htmlspecialchars($item['product_name'] ?? 'item', ENT_QUOTES) ?>">×</button><?php endif; ?>
+                <?php if (($item['item_type'] ?? 'product') !== 'custom_quote' && !empty($item['id'])): ?><button type="button" onclick="removeCheckoutItem('<?= htmlspecialchars((string)$item['id'], ENT_QUOTES) ?>')" aria-label="Remove <?= htmlspecialchars($item['product_name'] ?? 'item', ENT_QUOTES) ?>">×</button><?php endif; ?>
               </div>
             </article>
             <?php endforeach; ?>
           </div>
+          <?php if (!$hasCustomQuoteInCart): ?>
           <div class="checkout-coupon-mini">
             <div><i class="fa-solid fa-tag" aria-hidden="true"></i> Have a coupon?</div>
             <div class="coupon-row"><input id="couponInp" placeholder="Enter coupon code" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"><button class="btn btn-outline btn-sm" onclick="applyCouponCheckout()">Apply</button></div>
             <div id="couponMsg"></div>
           </div>
+          <?php endif; ?>
           <div class="checkout-totals" id="totalsBox">
             <div><span>Subtotal</span><strong>₹<?= number_format($checkoutSubtotal) ?></strong></div>
             <?php if ($checkoutDiscount > 0): ?><div class="is-discount"><span>Discount</span><strong>-₹<?= number_format($checkoutDiscount) ?></strong></div><?php endif; ?>
@@ -156,9 +151,10 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
 </main>
 <script>
 const CSRF = '<?= $csrf ?>';
-const BIZ_WA = '<?= htmlspecialchars($bizWa) ?>'; const CUSTOM_QUOTE_ID=<?= $isCustomCheckout?$customQuoteId:0 ?>;
+const BIZ_WA = '<?= htmlspecialchars($bizWa) ?>'; const CUSTOM_QUOTE_ID=0;
 let checkoutCoupon = null;
 let checkoutProfile = { shipping: null, billing: null };
+let checkoutAddresses = [];
 
 async function applyCouponCheckout() {
   const code = document.getElementById('couponInp').value.trim().toUpperCase();
@@ -429,6 +425,7 @@ function setField(id, val = '') {
   const el = document.getElementById(id);
   if (el) el.value = val || '';
 }
+function selectCheckoutAddress(value){const address=checkoutAddresses.find(item=>String(item.id)===String(value));if(!address)return;setField('s-business',address.business_name);setField('s-add1',address.address_line1);setField('s-add2',address.address_line2);setField('s-city',address.city);setField('s-state',address.state);setField('s-pin',address.pincode);syncBillingFromShipping();}
 
 async function prefillCheckoutFromProfile() {
   <?php if (empty($user['id'])): ?>
@@ -441,6 +438,9 @@ async function prefillCheckoutFromProfile() {
 
     checkoutProfile.shipping = data.profile.shipping || null;
     checkoutProfile.billing = data.profile.billing || null;
+    checkoutAddresses = Array.isArray(data.profile.addresses) ? data.profile.addresses : [];
+    const addressWrap=document.getElementById('saved-address-wrap'),addressSelect=document.getElementById('saved-address-select');
+    if(addressWrap&&addressSelect&&checkoutAddresses.length){addressWrap.hidden=false;addressSelect.innerHTML='<option value="">Enter a new address</option>'+checkoutAddresses.map(a=>`<option value="${a.id}">${String(a.label||'Address')} — ${String(a.address_line1||'')}</option>`).join('');const preferred=checkoutAddresses.find(a=>Number(a.is_default)===1)||checkoutAddresses[0];addressSelect.value=String(preferred.id);selectCheckoutAddress(preferred.id);}
     const profileName = data.profile.name || '';
     const profileCompany = data.profile.company || '';
 
@@ -479,12 +479,6 @@ document.addEventListener('DOMContentLoaded', () => {
   ['s-business','s-add1','s-add2','s-city','s-state','s-pin'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', syncBillingFromShipping);
-  });
-  document.querySelectorAll('.checkout-payment-options label').forEach(label => {
-    label.addEventListener('click', () => {
-      document.querySelectorAll('.checkout-payment-options label').forEach(item => item.classList.remove('is-selected'));
-      label.classList.add('is-selected');
-    });
   });
   prefillCheckoutFromProfile();
 });

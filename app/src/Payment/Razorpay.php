@@ -85,12 +85,18 @@ class Razorpay
         );
         if ($existing) {
             $order = self::findOrderByPaymentId($razorpayPaymentId);
+            \Cart\Cart::clearPurchased();
             return ['ok' => true, 'already_processed' => true, 'order' => $order];
         }
 
         $db = \Database::get();
         $db->beginTransaction();
         try {
+            $seedOrder=\Database::row("SELECT checkout_group_id FROM orders WHERE id=?",[$internalOrderId]);
+            $group=(string)($seedOrder['checkout_group_id']??'');
+            $groupRows=$group!==''?\Database::rows("SELECT id FROM orders WHERE checkout_group_id=? ORDER BY id",[$group]):[['id'=>$internalOrderId]];
+            $orderIds=array_values(array_unique(array_map(static fn($row)=>(int)$row['id'],$groupRows)));
+            $placeholders=implode(',',array_fill(0,count($orderIds),'?'));
             // Record payment
             \Database::insert(
                 "INSERT INTO payments (order_id, razorpay_order_id, razorpay_payment_id,
@@ -100,33 +106,23 @@ class Razorpay
             );
 
             // Update order
-            \Database::query(
-                "UPDATE orders SET payment_status = 'paid', payment_id = ?,
-                    razorpay_order_id = ?, status = 'new_order', updated_at = NOW()
-                 WHERE id = ?",
-                [$razorpayPaymentId, $razorpayOrderId, $internalOrderId]
-            );
+            \Database::query("UPDATE orders SET payment_status='paid',payment_id=?,razorpay_order_id=?,status='new_order',updated_at=NOW() WHERE id IN ({$placeholders})",[$razorpayPaymentId,$razorpayOrderId,...$orderIds]);
 
             \Database::query(
-                "UPDATE custom_quote_requests SET payment_status='paid', status='converted_to_order', order_id=?, updated_at=NOW() WHERE order_id=?",
-                [$internalOrderId, $internalOrderId]
+                "UPDATE custom_quote_requests SET payment_status='paid',status='converted_to_order',customer_update_pending=1,customer_update_type='customer_paid',customer_update_at=NOW(),updated_at=NOW() WHERE order_id IN ({$placeholders})",
+                $orderIds
             );
 
-            \Database::insert(
-                "INSERT INTO order_status_history (order_id, status, note, created_by, created_at)
-                 VALUES (?, 'new_order', 'Payment captured; order moved to New Order queue', ?, NOW())",
-                [$internalOrderId, 'system']
-            );
+            foreach($orderIds as $orderId)\Database::insert("INSERT INTO order_status_history(order_id,status,note,created_by,created_at) VALUES(?,'new_order','Payment captured; order moved to New Order queue',?,NOW())",[$orderId,'system']);
 
             $db->commit();
 
-            $order = \Orders\OrderManager::getOrder($internalOrderId);
-            if ($order) {
-                try { \Email\Mailer::sendPaymentSuccess($order); } catch (\Throwable) {}
-                try { \Sheets\SheetsSync::syncOrder($order); } catch (\Throwable) {}
-            }
+            $orders=array_values(array_filter(array_map(static fn($id)=>\Orders\OrderManager::getOrder($id),$orderIds)));
+            $order=$orders[0]??null;
+            \Cart\Cart::clearPurchased();
+            foreach($orders as $paidOrder){try { \Email\Mailer::sendPaymentSuccess($paidOrder); } catch (\Throwable) {}try { \Sheets\SheetsSync::syncOrder($paidOrder); } catch (\Throwable) {}}
 
-            return ['ok' => true, 'order' => $order];
+            return ['ok' => true, 'order' => $order, 'orders'=>$orders, 'checkout_group_id'=>$group];
 
         } catch (\Throwable $e) {
             if ($db->inTransaction()) {

@@ -126,6 +126,7 @@ $ensureCustomQuoteSchema = static function (): void {
             phone VARCHAR(40) NOT NULL,
             email VARCHAR(180) NULL,
             product_name VARCHAR(180) NOT NULL,
+            product_image VARCHAR(500) NULL,
             size_dimension VARCHAR(160) NULL,
             material_type VARCHAR(160) NULL,
             quantity VARCHAR(80) NULL,
@@ -133,6 +134,7 @@ $ensureCustomQuoteSchema = static function (): void {
             status VARCHAR(40) NOT NULL DEFAULT 'new',
             admin_notes TEXT NULL,
             quoted_amount DECIMAL(12,2) NULL,
+            design_fee DECIMAL(12,2) NOT NULL DEFAULT 0,
             currency VARCHAR(10) NOT NULL DEFAULT 'INR',
             source_page VARCHAR(255) NULL,
             ip_address VARCHAR(64) NULL,
@@ -145,6 +147,10 @@ $ensureCustomQuoteSchema = static function (): void {
             sent_at DATETIME NULL,
             payment_link_generated_at DATETIME NULL,
             approved_at DATETIME NULL,
+            is_seen TINYINT(1) NOT NULL DEFAULT 0,
+            customer_update_pending TINYINT(1) NOT NULL DEFAULT 0,
+            customer_update_type VARCHAR(80) NULL,
+            customer_update_at DATETIME NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
             KEY idx_custom_quote_status (status, created_at),
@@ -153,7 +159,9 @@ $ensureCustomQuoteSchema = static function (): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         foreach ([
             "ALTER TABLE custom_quote_requests ADD COLUMN admin_notes TEXT NULL AFTER status",
+            "ALTER TABLE custom_quote_requests ADD COLUMN product_image VARCHAR(500) NULL AFTER product_name",
             "ALTER TABLE custom_quote_requests ADD COLUMN quoted_amount DECIMAL(12,2) NULL AFTER admin_notes",
+            "ALTER TABLE custom_quote_requests ADD COLUMN design_fee DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER quoted_amount",
             "ALTER TABLE custom_quote_requests ADD COLUMN currency VARCHAR(10) NOT NULL DEFAULT 'INR' AFTER quoted_amount",
             "ALTER TABLE custom_quote_requests ADD COLUMN order_id INT UNSIGNED NULL AFTER user_agent",
             "ALTER TABLE custom_quote_requests ADD COLUMN customer_type VARCHAR(30) NOT NULL DEFAULT 'guest' AFTER order_id",
@@ -163,6 +171,10 @@ $ensureCustomQuoteSchema = static function (): void {
             "ALTER TABLE custom_quote_requests ADD COLUMN sent_at DATETIME NULL AFTER payment_status",
             "ALTER TABLE custom_quote_requests ADD COLUMN payment_link_generated_at DATETIME NULL AFTER sent_at",
             "ALTER TABLE custom_quote_requests ADD COLUMN approved_at DATETIME NULL AFTER payment_link_generated_at",
+            "ALTER TABLE custom_quote_requests ADD COLUMN is_seen TINYINT(1) NOT NULL DEFAULT 0 AFTER approved_at",
+            "ALTER TABLE custom_quote_requests ADD COLUMN customer_update_pending TINYINT(1) NOT NULL DEFAULT 0 AFTER is_seen",
+            "ALTER TABLE custom_quote_requests ADD COLUMN customer_update_type VARCHAR(80) NULL AFTER customer_update_pending",
+            "ALTER TABLE custom_quote_requests ADD COLUMN customer_update_at DATETIME NULL AFTER customer_update_type",
         ] as $sql) { try { Database::query($sql); } catch (\Throwable) {} }
         try { Database::query("ALTER TABLE custom_quote_requests DROP COLUMN estimated_delivery"); } catch (\Throwable) {}
         try {
@@ -251,7 +263,7 @@ $whatsappTemplateDefaults = [
     'custom_quote_sent' => [
         'title' => 'Send Custom Quote',
         'description' => 'Sent after the quoted amount and quote note are saved.',
-        'body' => "Hello {customer_name}, 👋\n\nThank you for your custom quotation request {quote_id}.\n\nProduct: {product_name}\nSize: {size_dimension}\nMaterial: {material_type}\nQuantity: {quantity}\nQuoted Amount: {quoted_amount}\n\n{quote_note}\n\nPlease reply APPROVE to confirm this quote.\n\nThank you,\n{business_name}",
+        'body' => "Hello {customer_name}, 👋\n\nThank you for your custom quotation request {quote_id}.\n\nProduct: {product_name}\nSize: {size_dimension}\nMaterial: {material_type}\nQuantity: {quantity}\nAmount: {quoted_amount}\nDesign Fee: {design_fee}\nSubtotal before GST: {custom_subtotal}\n\n{quote_note}\n\nPlease reply APPROVE to confirm this quote.\n\nThank you,\n{business_name}",
     ],
     'custom_quote_payment' => [
         'title' => 'Send Custom Order Payment Link',
@@ -454,6 +466,48 @@ $hasAdminUsersMobile = static function () use (&$adminUsersHasMobile): bool {
 if (str_starts_with($uri, '/admin/api/')) {
     header('Content-Type: application/json');
     $body = json_decode(file_get_contents('php://input'), true) ?? $_POST;
+
+    if ($uri === '/admin/api/live-updates' && $method === 'GET') {
+        $count = static function (string $sql): int { try { return (int)(Database::row($sql)['c'] ?? 0); } catch (\Throwable) { return 0; } };
+        $approvals = 0;
+        if (\Auth\Auth::isSuperAdmin()) foreach (['products','categories','coupons','home_deals'] as $table) $approvals += $count("SELECT COUNT(*) c FROM {$table} WHERE approval_status='pending'");
+        $adminId=(int)(\Auth\Auth::admin()['id']??0); $notificationFeed=['notifications'=>[],'unread'=>0,'cursor'=>0];
+        try { $notificationFeed=\Notifications\AdminNotificationManager::feed($adminId,max(0,(int)($_GET['after']??0)),20); } catch (\Throwable $e) { error_log('Admin notification feed unavailable: '.$e->getMessage()); }
+        $changedSince=trim((string)($_GET['changed_since']??''));$changedAt=null;
+        if($changedSince!==''){try{$changedAt=(new DateTimeImmutable($changedSince))->setTimezone(new DateTimeZone(APP_TIMEZONE))->format('Y-m-d H:i:s');}catch(\Throwable){$changedAt=null;}}
+        $orderChanges=[];$quoteChanges=[];
+        if($changedAt){
+            try{$orderChanges=Database::rows("SELECT id,status,payment_status,customer_update_pending,customer_update_type,updated_at FROM orders WHERE updated_at>? ORDER BY updated_at,id LIMIT 80",[$changedAt]);}catch(\Throwable){}
+            try{$quoteChanges=Database::rows("SELECT id,status,payment_status,customer_update_pending,customer_update_type,is_seen,updated_at FROM custom_quote_requests WHERE updated_at>? ORDER BY updated_at,id LIMIT 80",[$changedAt]);}catch(\Throwable){}
+        }
+        json(['ok'=>true,'counts'=>[
+            'orders'=>$count("SELECT COUNT(*) c FROM orders WHERE status='new_order'"),
+            'custom_orders'=>$count("SELECT COUNT(*) c FROM custom_quote_requests WHERE status='new'"),
+            'leads'=>$count("SELECT COUNT(*) c FROM contact_leads WHERE COALESCE(is_read,0)=0"),
+            'approvals'=>$approvals,
+        ],'notifications'=>$notificationFeed['notifications'],'notification_unread'=>$notificationFeed['unread'],'notification_cursor'=>$notificationFeed['cursor'],'order_changes'=>$orderChanges,'quote_changes'=>$quoteChanges,'server_time'=>date(DATE_ATOM)]);
+    }
+    if ($uri === '/admin/api/notifications' && $method === 'GET') { $adminId=(int)(\Auth\Auth::admin()['id']??0); try { json(['ok'=>true,...\Notifications\AdminNotificationManager::feed($adminId,max(0,(int)($_GET['after']??0)),50)]); } catch (\Throwable $e) { error_log($e->getMessage()); json(['ok'=>false,'msg'=>'Notifications are temporarily unavailable.'],500); } }
+    if ($uri === '/admin/api/notifications/read' && $method === 'POST') { \Auth\Auth::verifyCsrf(); \Notifications\AdminNotificationManager::markRead((int)(\Auth\Auth::admin()['id']??0),!empty($body['id'])?(int)$body['id']:null); json(['ok'=>true]); }
+    if ($uri === '/admin/api/site-chrome' && $method === 'GET') { json(['ok'=>true,'data'=>\Site\SiteChromeManager::payload()]); }
+    if ($uri === '/admin/api/site-chrome' && $method === 'POST') {
+        \Auth\Auth::verifyCsrf();
+        try { \Site\SiteChromeManager::save($body); json(['ok'=>true]); }
+        catch (\Throwable $e) { error_log($e->getMessage()); json(['ok'=>false,'msg'=>'Could not save header and footer.'],500); }
+    }
+    if ($uri === '/admin/api/site-chrome/logo' && $method === 'POST') {
+        \Auth\Auth::verifyCsrf();
+        $file=$_FILES['image']??null;
+        if(!$file||$file['error']!==UPLOAD_ERR_OK||!is_uploaded_file($file['tmp_name'])) json(['ok'=>false,'msg'=>'Choose an image.'],422);
+        $ext=strtolower(pathinfo((string)$file['name'],PATHINFO_EXTENSION));
+        $mime=mime_content_type($file['tmp_name'])?:'';
+        if(!in_array($ext,['jpg','jpeg','png','webp'],true)||!in_array($mime,['image/jpeg','image/png','image/webp'],true)) json(['ok'=>false,'msg'=>'JPG, PNG or WEBP only.'],422);
+        if((int)$file['size']>5*1024*1024) json(['ok'=>false,'msg'=>'Image must be under 5 MB.'],422);
+        $dir=PUBLIC_PATH.'/uploads/site/'; if(!is_dir($dir)) mkdir($dir,0755,true);
+        $name='logo-'.bin2hex(random_bytes(8)).'.'.$ext;
+        if(!move_uploaded_file($file['tmp_name'],$dir.$name)) json(['ok'=>false,'msg'=>'Upload failed.'],500);
+        json(['ok'=>true,'path'=>'/uploads/site/'.$name]);
+    }
 
     $slugify = static function (string $value): string {
         $value = strtolower(trim($value));
@@ -938,7 +992,7 @@ if (str_starts_with($uri, '/admin/api/')) {
 
     // ── Product Reviews Moderation ────────────────────────────
     if ($uri === '/admin/api/reviews' && $method === 'GET') {
-        $status = trim((string)($_GET['status'] ?? 'all'));
+        $status = trim((string)($_GET['status'] ?? 'new_order'));
         $search = trim((string)($_GET['search'] ?? ''));
         json(['ok' => true, 'reviews' => \Reviews\ProductReview::adminList($status, $search, 200)]);
     }
@@ -1039,11 +1093,12 @@ if (str_starts_with($uri, '/admin/api/')) {
             'delivered' => (int)(Database::row("SELECT COUNT(*) as c FROM orders WHERE status='delivered'")['c'] ?? 0),
         ];
         $byStatus    = Database::rows("SELECT status, COUNT(*) as count FROM orders GROUP BY status");
-        $monthly     = Database::rows("SELECT DATE_FORMAT(created_at,'%b %Y') as month, SUM(total_amount) as revenue, COUNT(*) as orders FROM orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH) GROUP BY YEAR(created_at), MONTH(created_at) ORDER BY created_at ASC");
+        $monthly     = Database::rows("SELECT DATE_FORMAT(created_at,'%b %Y') as month, SUM(total_amount) as revenue, COUNT(*) as orders FROM orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH) AND payment_status='paid' GROUP BY YEAR(created_at), MONTH(created_at) ORDER BY MIN(created_at) ASC");
         $topProducts = Database::rows("SELECT product_name, COUNT(*) as count, SUM(total_price) as revenue FROM order_items GROUP BY product_name ORDER BY count DESC LIMIT 8");
         $recentOrders= Database::rows("SELECT o.*, COUNT(oi.id) as item_count, SUBSTRING_INDEX(GROUP_CONCAT(oi.product_name ORDER BY oi.id SEPARATOR ', '), ',', 1) as product_summary FROM orders o LEFT JOIN order_items oi ON oi.order_id=o.id GROUP BY o.id ORDER BY o.created_at DESC LIMIT 10");
         $recentNewOrders = Database::rows("SELECT o.*, COUNT(oi.id) as item_count, SUBSTRING_INDEX(GROUP_CONCAT(oi.product_name ORDER BY oi.id SEPARATOR ', '), ',', 1) as product_summary FROM orders o LEFT JOIN order_items oi ON oi.order_id=o.id WHERE $newOrderWhere GROUP BY o.id ORDER BY o.created_at DESC LIMIT 6");
-        json(['ok'=>true,'stats'=>$stats,'queue'=>$queue,'by_status'=>$byStatus,'monthly'=>$monthly,'top_products'=>$topProducts,'recent_orders'=>$recentOrders,'recent_new_orders'=>$recentNewOrders,'seen_supported'=>$hasSeen]);
+        $recentCustomers = Database::rows("SELECT id,name,email,created_at FROM users ORDER BY created_at DESC,id DESC LIMIT 6");
+        json(['ok'=>true,'stats'=>$stats,'queue'=>$queue,'by_status'=>$byStatus,'monthly'=>$monthly,'top_products'=>$topProducts,'recent_orders'=>$recentOrders,'recent_new_orders'=>$recentNewOrders,'recent_customers'=>$recentCustomers,'seen_supported'=>$hasSeen]);
     }
 
     if ($uri === '/admin/api/order-notifications' && $method === 'GET') {
@@ -1110,6 +1165,7 @@ if (str_starts_with($uri, '/admin/api/')) {
                 ]
             );
             \Orders\AdminAudit::log('order_shipping_update', 'Order #' . $m[1] . ' shipping updated');
+            \Orders\OrderManager::markAdminUpdate((int)$m[1], 'shipping_updated');
             json(['ok'=>true]);
         } catch (\Throwable $e) {
             json(['ok'=>false,'msg'=>'Shipping columns missing. Apply SQL migration first.'], 500);
@@ -1754,6 +1810,14 @@ if (str_starts_with($uri, '/admin/api/')) {
     }
 
 
+    if ($uri === '/admin/api/combo-offers' && $method === 'GET') { try { json(['ok'=>true,'offers'=>\Combos\ComboOfferManager::all(false, trim((string)($_GET['q'] ?? ''))),'products'=>\Combos\ComboOfferManager::productsForAdmin(),'categories'=>Database::rows("SELECT id,name FROM categories WHERE is_active=1 ORDER BY name")]); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>$e->getMessage()],500); } }
+    if ($uri === '/admin/api/combo-offers' && $method === 'POST') { \Auth\Auth::verifyCsrf(); try { json(\Combos\ComboOfferManager::save($body),200); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not save combo offer.'],500); } }
+    if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && $method === 'GET') { $offer=\Combos\ComboOfferManager::find((int)$m[1]); json(['ok'=>(bool)$offer,'offer'=>$offer],$offer?200:404); }
+    if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && in_array($method,['PUT','POST'],true)) { \Auth\Auth::verifyCsrf(); try { json(\Combos\ComboOfferManager::save($body,(int)$m[1])); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not update combo offer.'],500); } }
+    if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && $method === 'DELETE') { \Auth\Auth::verifyCsrf(); \Combos\ComboOfferManager::delete((int)$m[1]); json(['ok'=>true]); }
+    if (preg_match('#^/admin/api/combo-offers/(\d+)/toggle$#',$uri,$m) && $method === 'POST') { \Auth\Auth::verifyCsrf(); $id=(int)$m[1]; $offer=\Combos\ComboOfferManager::find($id); if(!$offer) json(['ok'=>false,'msg'=>'Combo offer not found'],404); $active=empty($offer['is_active'])?1:0; if($active&&!empty($offer['show_on_home'])){$occupant=\Combos\ComboOfferManager::positionOccupant((string)$offer['layout_slot'],$id);if($occupant)json(['ok'=>false,'msg'=>'This position is already occupied by “'.$occupant['title'].'”. Deactivate that offer or edit this offer position first.'],409);} Database::query("UPDATE combo_offers SET is_active=?,updated_at=NOW() WHERE id=?",[$active,$id]); json(['ok'=>true,'is_active'=>$active]); }
+    if ($uri === '/admin/api/combo-offers/upload' && $method === 'POST') { \Auth\Auth::verifyCsrf(); $file=$_FILES['image']??null; if(!$file||$file['error']!==UPLOAD_ERR_OK||!is_uploaded_file($file['tmp_name'])) json(['ok'=>false,'msg'=>'Choose an image.'],422); if((int)$file['size']<=0||(int)$file['size']>6*1024*1024) json(['ok'=>false,'msg'=>'Image must be under 6 MB.'],422); $ext=strtolower(pathinfo($file['name'],PATHINFO_EXTENSION)); $mime=mime_content_type($file['tmp_name'])?:''; if(!in_array($ext,['jpg','jpeg','png','webp'],true)||!in_array($mime,['image/jpeg','image/png','image/webp'],true)) json(['ok'=>false,'msg'=>'JPG, PNG or WEBP only.'],422); $dir=PUBLIC_PATH.'/uploads/combos/'; if(!is_dir($dir)) mkdir($dir,0755,true); $name='combo-'.bin2hex(random_bytes(8)).'.'.$ext; if(!move_uploaded_file($file['tmp_name'],$dir.$name)) json(['ok'=>false,'msg'=>'Upload failed.'],500); json(['ok'=>true,'path'=>'/uploads/combos/'.$name]); }
+
     if ($uri === '/admin/api/deals' && $method === 'GET') {
         try {
             $rows = Database::rows("SELECT * FROM home_deals ORDER BY sort_order ASC, id DESC");
@@ -1877,6 +1941,22 @@ if (str_starts_with($uri, '/admin/api/')) {
 
 
 
+    if ($uri === '/admin/api/custom-orders' && $method === 'POST') {
+        $name = trim((string)($body['customer_name'] ?? ''));
+        $phone = trim((string)($body['phone'] ?? ''));
+        $product = trim((string)($body['product_name'] ?? ''));
+        if ($name === '' || $phone === '' || $product === '') json(['ok'=>false,'msg'=>'Customer name, WhatsApp number and product are required.'], 422);
+        $email=trim((string)($body['email'] ?? ''));
+        $matched=$email!==''?Database::row("SELECT id FROM users WHERE is_active=1 AND (email=? OR phone=?) LIMIT 1",[$email,$phone]):Database::row("SELECT id FROM users WHERE is_active=1 AND phone=? LIMIT 1",[$phone]);
+        $userId=(int)($matched['id']??0); $pendingCode='CQ-PENDING-'.strtoupper(bin2hex(random_bytes(8))); $token=bin2hex(random_bytes(24));
+        $id = Database::insert("INSERT INTO custom_quote_requests (request_code,user_id,customer_name,phone,email,product_name,size_dimension,material_type,quantity,instructions,status,customer_type,quote_token,source_page,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,'new',?,?, 'admin',NOW())", [
+            $pendingCode,$userId?:null,$name,$phone,$email?:null,$product,trim((string)($body['size_dimension'] ?? '')),trim((string)($body['material_type'] ?? '')),trim((string)($body['quantity'] ?? '')),trim((string)($body['instructions'] ?? '')),$userId?'registered':'guest',$token
+        ]);
+        $code = 'CQ-' . str_pad((string)$id, 4, '0', STR_PAD_LEFT);
+        Database::query("UPDATE custom_quote_requests SET request_code=? WHERE id=?", [$code,(int)$id]);
+        json(['ok'=>true,'id'=>(int)$id,'request_code'=>$code]);
+    }
+
     if ($uri === '/admin/api/custom-orders' && $method === 'GET') {
         try {
             $rows = Database::rows("SELECT cqr.*, u.name AS user_name, u.email AS user_email, u.phone AS user_phone
@@ -1884,13 +1964,19 @@ if (str_starts_with($uri, '/admin/api/')) {
                 LEFT JOIN users u ON u.id = cqr.user_id
                 ORDER BY cqr.created_at DESC, cqr.id DESC
                 LIMIT 300");
-            $counts = ['all'=>count($rows),'new'=>0,'reviewing'=>0,'sent_to_customer'=>0,'customer_approved'=>0,'payment_pending'=>0,'converted_to_order'=>0,'rejected'=>0];
+            $counts = ['all'=>0,'new'=>0,'reviewing'=>0,'sent_to_customer'=>0,'customer_approved'=>0,'payment_pending'=>0,'converted_to_order'=>0,'rejected'=>0];
+            $updateCounts = ['new'=>0,'converted_to_order'=>0];
             foreach ($rows as $row) {
                 $st = (string)($row['status'] ?? 'new');
                 if ($st === 'paid') $st = 'converted_to_order';
                 if (array_key_exists($st, $counts)) $counts[$st]++;
+                if (!in_array($st, ['rejected','closed'], true)) $counts['all']++;
+                if ($st === 'new' && (int)($row['is_seen'] ?? 0) === 0) $updateCounts['new']++;
+                if ($st === 'converted_to_order' && (int)($row['customer_update_pending'] ?? 0) === 1) $updateCounts['converted_to_order']++;
             }
-            json(['ok'=>true,'quotes'=>$rows,'counts'=>$counts]);
+            $unseen = (int)(Database::row("SELECT COUNT(*) AS c FROM custom_quote_requests WHERE is_seen=0")['c'] ?? 0);
+            Database::query("UPDATE custom_quote_requests SET is_seen=1 WHERE is_seen=0");
+            json(['ok'=>true,'quotes'=>$rows,'counts'=>$counts,'unseen'=>$unseen,'update_counts'=>$updateCounts]);
         } catch (\Throwable $e) {
             json(['ok'=>false,'msg'=>'Could not load custom orders','quotes'=>[],'counts'=>[]], 500);
         }
@@ -1901,6 +1987,12 @@ if (str_starts_with($uri, '/admin/api/')) {
         $status = trim((string)($body['status'] ?? 'new'));
         if (!in_array($status, $allowed, true)) json(['ok'=>false,'msg'=>'Invalid status'], 422);
         try {
+            $existing = Database::row("SELECT payment_status,order_id,user_id FROM custom_quote_requests WHERE id=? LIMIT 1", [(int)$m[1]]);
+            if (!$existing) json(['ok'=>false,'msg'=>'Custom quote not found'], 404);
+            if (in_array($status, ['paid','converted_to_order'], true) && ((string)($existing['payment_status'] ?? '') !== 'paid' || (int)($existing['order_id'] ?? 0) < 1)) {
+                Database::query("UPDATE custom_quote_requests SET status='payment_pending',payment_status='payment_pending',updated_at=NOW() WHERE id=?", [(int)$m[1]]);
+                json(['ok'=>false,'msg'=>'Payment is still pending. The custom order remains in Payment Pending.'], 422);
+            }
             $timestampSql = '';
             if ($status === 'sent_to_customer') {
                 $timestampSql .= ', sent_at=COALESCE(sent_at, NOW())';
@@ -1908,7 +2000,7 @@ if (str_starts_with($uri, '/admin/api/')) {
             if ($status === 'customer_approved') {
                 $timestampSql .= ', approved_at=COALESCE(approved_at, NOW())';
             }
-            Database::query("UPDATE custom_quote_requests SET customer_name=?, phone=?, email=?, product_name=?, size_dimension=?, material_type=?, quantity=?, instructions=?, status=?, quoted_amount=?, quote_note=?, payment_status=?{$timestampSql}, updated_at=NOW() WHERE id=?", [
+            Database::query("UPDATE custom_quote_requests SET customer_name=?, phone=?, email=?, product_name=?, size_dimension=?, material_type=?, quantity=?, instructions=?, status=?, quoted_amount=?, design_fee=?, quote_note=?, payment_status=?{$timestampSql}, updated_at=NOW() WHERE id=?", [
                 trim((string)($body['customer_name'] ?? '')),
                 trim((string)($body['phone'] ?? '')),
                 trim((string)($body['email'] ?? '')) ?: null,
@@ -1919,10 +2011,15 @@ if (str_starts_with($uri, '/admin/api/')) {
                 trim((string)($body['instructions'] ?? '')),
                 $status,
                 ($body['quoted_amount'] ?? '') !== '' && ($body['quoted_amount'] ?? null) !== null ? (float)$body['quoted_amount'] : null,
+                max(0, (float)($body['design_fee'] ?? 0)),
                 trim((string)($body['quote_note'] ?? '')),
-                trim((string)($body['payment_status'] ?? 'not_required')) ?: 'not_required',
+                (string)($existing['payment_status'] ?? 'not_required'),
                 (int)$m[1],
             ]);
+            if (!empty($existing['user_id']) && in_array($status, ['customer_approved','payment_pending'], true)) {
+                $savedQuote = Database::row("SELECT * FROM custom_quote_requests WHERE id=?", [(int)$m[1]]);
+                if ($savedQuote) \Cart\Cart::addCustomQuote($savedQuote, (int)$existing['user_id']);
+            }
             json(['ok'=>true]);
         } catch (\Throwable $e) {
             json(['ok'=>false,'msg'=>'Could not save custom order: ' . $e->getMessage()], 500);
@@ -1968,8 +2065,14 @@ if (str_starts_with($uri, '/admin/api/')) {
             if ((string)($quote['status'] ?? '') !== 'customer_approved') json(['ok'=>false,'msg'=>'Mark this quote approved before generating the payment link.'], 422);
             if (empty($quote['user_id'])) json(['ok'=>false,'msg'=>'Create or link the customer account before generating the payment link.'], 422);
             if ((float)($quote['quoted_amount'] ?? 0) <= 0) json(['ok'=>false,'msg'=>'Please save quoted amount before generating payment link.'], 422);
-            $token = trim((string)($quote['quote_token'] ?? '')) ?: bin2hex(random_bytes(24));
+            $token = trim((string)($quote['quote_token'] ?? ''));
+            if (!preg_match('/^[A-Za-z0-9._~-]{16,160}$/', $token)) $token = bin2hex(random_bytes(24));
             Database::query("UPDATE custom_quote_requests SET quote_token=?, status='payment_pending', payment_status='payment_pending', payment_link_generated_at=COALESCE(payment_link_generated_at, NOW()), updated_at=NOW() WHERE id=?", [$token, (int)$m[1]]);
+            $quote['quote_token'] = $token;
+            $quote['status'] = 'payment_pending';
+            $quote['payment_status'] = 'payment_pending';
+            $cartResult = \Cart\Cart::addCustomQuote($quote, (int)$quote['user_id']);
+            if (!($cartResult['ok'] ?? false)) json(['ok'=>false,'msg'=>$cartResult['msg'] ?? 'Could not add custom order to the customer cart.'], 422);
             $base = rtrim((defined('APP_URL') ? (string)APP_URL : ''), '/'); if ($base === '') { $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http'; $base = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? ''); }
             json(['ok'=>true,'link'=>$base . '/custom-cart/' . rawurlencode($token),'token'=>$token,'status'=>'payment_pending']);
         } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not generate payment link: ' . $e->getMessage()], 500); }
@@ -1983,7 +2086,8 @@ if (str_starts_with($uri, '/admin/api/')) {
             if ($type === 'payment' && (empty($quote['user_id']) || trim((string)($quote['quote_token'] ?? '')) === '')) json(['ok'=>false,'msg'=>'Create the account and generate payment link first.'], 422);
             $template = Database::row("SELECT body FROM whatsapp_message_templates WHERE template_key=? AND is_active=1 LIMIT 1", [$key]); $text = (string)($template['body'] ?? $whatsappTemplateDefaults[$key]['body']);
             $base = rtrim((defined('APP_URL') ? (string)APP_URL : ''), '/'); if ($base === '') { $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http'; $base = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? ''); }
-            $data = ['customer_name'=>(string)$quote['customer_name'],'quote_id'=>(string)$quote['request_code'],'product_name'=>(string)$quote['product_name'],'size_dimension'=>(string)$quote['size_dimension'],'material_type'=>(string)$quote['material_type'],'quantity'=>(string)$quote['quantity'],'quoted_amount'=>'₹'.number_format((float)$quote['quoted_amount'],2),'quote_note'=>(string)$quote['quote_note'],'business_name'=>(string)Database::setting('site_name','RCS Print'),'login_url'=>$base.'/login?next=/cart','login_identifier'=>(string)($quote['account_email'] ?: $quote['account_phone'] ?: $quote['email']),'login_password'=>(string)preg_replace('/\D+/', '', (string)($quote['account_phone'] ?: $quote['phone'])),'payment_link'=>$base.'/custom-cart/'.rawurlencode((string)$quote['quote_token'])];
+            $customCartUrl = $base.'/custom-cart/'.rawurlencode((string)$quote['quote_token']);
+            $data = ['customer_name'=>(string)$quote['customer_name'],'quote_id'=>(string)$quote['request_code'],'product_name'=>(string)$quote['product_name'],'size_dimension'=>(string)$quote['size_dimension'],'material_type'=>(string)$quote['material_type'],'quantity'=>(string)$quote['quantity'],'quoted_amount'=>'₹'.number_format((float)$quote['quoted_amount'],2),'design_fee'=>'₹'.number_format((float)($quote['design_fee']??0),2),'custom_subtotal'=>'₹'.number_format((float)$quote['quoted_amount']+(float)($quote['design_fee']??0),2),'quote_note'=>(string)$quote['quote_note'],'business_name'=>(string)Database::setting('site_name','RCS Print'),'login_url'=>$base.'/login?next='.rawurlencode('/custom-cart/'.(string)$quote['quote_token']),'login_identifier'=>(string)($quote['account_email'] ?: $quote['account_phone'] ?: $quote['email']),'login_password'=>(string)preg_replace('/\D+/', '', (string)($quote['account_phone'] ?: $quote['phone'])),'payment_link'=>$customCartUrl,'custom_cart_url'=>$customCartUrl];
             $message = preg_replace_callback('/\{([a-z0-9_]+)\}/i', static fn($x) => $data[$x[1]] ?? $x[0], $text); json(['ok'=>true,'message'=>$message]);
         } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not prepare WhatsApp message: '.$e->getMessage()],500); }
     }
@@ -1993,6 +2097,12 @@ if (str_starts_with($uri, '/admin/api/')) {
         $status = trim((string)($body['status'] ?? ''));
         if (!in_array($status, $allowed, true)) json(['ok'=>false,'msg'=>'Invalid status'], 422);
         try {
+            $existing = Database::row("SELECT payment_status,order_id FROM custom_quote_requests WHERE id=? LIMIT 1", [(int)$m[1]]);
+            if (!$existing) json(['ok'=>false,'msg'=>'Custom quote not found'], 404);
+            if (in_array($status, ['paid','converted_to_order'], true) && ((string)($existing['payment_status'] ?? '') !== 'paid' || (int)($existing['order_id'] ?? 0) < 1)) {
+                Database::query("UPDATE custom_quote_requests SET status='payment_pending',payment_status='payment_pending',updated_at=NOW() WHERE id=?", [(int)$m[1]]);
+                json(['ok'=>false,'msg'=>'Payment is still pending. The custom order remains in Payment Pending.'], 422);
+            }
             $timestampSql = '';
             if ($status === 'sent_to_customer') {
                 $timestampSql .= ', sent_at=COALESCE(sent_at, NOW())';
@@ -2005,6 +2115,26 @@ if (str_starts_with($uri, '/admin/api/')) {
         } catch (\Throwable $e) {
             json(['ok'=>false,'msg'=>'Could not update custom order: ' . $e->getMessage()], 500);
         }
+    }
+    if (preg_match('#^/admin/api/custom-orders/(\d+)/attention/clear$#', $uri, $m) && $method === 'POST') {
+        Database::query("UPDATE custom_quote_requests SET customer_update_pending=0,customer_update_type=NULL,customer_update_at=NULL WHERE id=?",[(int)$m[1]]);
+        json(['ok'=>true]);
+    }
+    if (preg_match('#^/admin/api/custom-orders/(\d+)/product-image$#', $uri, $m) && $method === 'POST') { \Auth\Auth::verifyCsrf();
+        $quote = Database::row("SELECT id,product_image FROM custom_quote_requests WHERE id=?", [(int)$m[1]]);
+        if (!$quote) json(['ok'=>false,'msg'=>'Custom order not found'],404);
+        $file=$_FILES['image']??null;
+        if(!$file||$file['error']!==UPLOAD_ERR_OK||!is_uploaded_file($file['tmp_name'])) json(['ok'=>false,'msg'=>'Choose an image.'],422);
+        if((int)$file['size']<=0||(int)$file['size']>6*1024*1024) json(['ok'=>false,'msg'=>'Image must be under 6 MB.'],422);
+        $ext=strtolower(pathinfo((string)$file['name'],PATHINFO_EXTENSION)); $mime=mime_content_type($file['tmp_name'])?:'';
+        if(!in_array($ext,['jpg','jpeg','png','webp'],true)||!in_array($mime,['image/jpeg','image/png','image/webp'],true)) json(['ok'=>false,'msg'=>'Only JPG, PNG and WEBP images are allowed.'],422);
+        $dir=PUBLIC_PATH.'/uploads/custom-orders/'; if(!is_dir($dir)) @mkdir($dir,0755,true);
+        $name='custom-order-'.(int)$m[1].'-'.bin2hex(random_bytes(6)).'.'.$ext;
+        if(!move_uploaded_file($file['tmp_name'],$dir.$name)) json(['ok'=>false,'msg'=>'Upload failed.'],500);
+        $path='/uploads/custom-orders/'.$name; Database::query("UPDATE custom_quote_requests SET product_image=?,updated_at=NOW() WHERE id=?",[$path,(int)$m[1]]);
+        try { Database::query("UPDATE order_items SET custom_product_image=? WHERE custom_quote_id=?",[$path,(int)$m[1]]); } catch (\Throwable) {}
+        $old=(string)($quote['product_image']??''); if(str_starts_with($old,'/uploads/custom-orders/')&&$old!==$path&&is_file(PUBLIC_PATH.$old)) @unlink(PUBLIC_PATH.$old);
+        json(['ok'=>true,'path'=>$path]);
     }
 
     if ($uri === '/admin/api/business-needs' && $method === 'GET') {
@@ -2742,6 +2872,7 @@ if (preg_match('#^/admin/orders/(\d+)/invoice$#', $uri, $m) && $method === 'POST
 
     $admin = \Auth\Auth::admin();
     \Orders\OrderManager::saveUploadedInvoice((int)$order['id'], $relativePath, $originalName, !empty($admin['id']) ? (int)$admin['id'] : null);
+    \Orders\OrderManager::markAdminUpdate((int)$order['id'], 'invoice_uploaded');
     \Orders\AdminAudit::log('invoice_uploaded', 'Invoice uploaded for order ' . (string)$order['order_id']);
     redirect('/admin/orders?success=' . urlencode('Invoice PDF uploaded for order #' . (string)$order['order_id']) . '#ord-' . (int)$order['id']);
 }
@@ -2797,11 +2928,12 @@ if ($uri === '/admin/orders') {
     $status = trim((string)($_GET['status'] ?? 'all'));
     $paymentStatus = trim((string)($_GET['payment_status'] ?? 'all'));
     $seen = trim((string)($_GET['seen'] ?? 'all'));
+    $attention = trim((string)($_GET['attention'] ?? '0')) === '1';
     $sort = trim((string)($_GET['sort'] ?? 'newest'));
     $dateFrom = trim((string)($_GET['date_from'] ?? ''));
     $dateTo = trim((string)($_GET['date_to'] ?? ''));
-    $page   = max(1, (int)($_GET['page'] ?? 1));
-    $perPage = 12;
+    $page = 1;
+    $perPage = PHP_INT_MAX;
     $hasSeen = $ensureOrderSeenColumn();
 
     $summaryRow = Database::row(
@@ -2833,6 +2965,15 @@ if ($uri === '/admin/orders') {
     $statusCounts['ready_dispatch'] = (int)($statusCounts['ready'] ?? 0);
     $statusCounts['attention'] = ($statusCounts['received'] ?? 0) + ($statusCounts['whatsapp_pending'] ?? 0) + ($statusCounts['design_approved'] ?? 0) + ($statusCounts['other_process'] ?? 0) + ($statusCounts['printing'] ?? 0);
     $statusCounts['delayed'] = $summaryCounts['delayed_orders'];
+    $attentionPredicate = ($hasSeen ? "(COALESCE(customer_update_pending,0)=1 OR (status='new_order' AND COALESCE(is_seen,0)=0))" : "COALESCE(customer_update_pending,0)=1");
+    $attentionCountRows = Database::rows("SELECT status, COUNT(*) AS c FROM orders WHERE $attentionPredicate GROUP BY status");
+    $attentionCounts = ['all' => 0];
+    foreach ($attentionCountRows as $row) {
+        $attentionCounts[(string)$row['status']] = (int)$row['c'];
+        $attentionCounts['all'] += (int)$row['c'];
+    }
+    $attentionCounts['other_process'] = (int)($attentionCounts['other_process'] ?? 0) + (int)($attentionCounts['processing'] ?? 0);
+    $attentionCounts['ready_dispatch'] = (int)($attentionCounts['ready'] ?? 0);
 
     $where = [];
     $params = [];
@@ -2844,6 +2985,7 @@ if ($uri === '/admin/orders') {
         $where[] = "status IN ('other_process','processing')";
     } elseif ($status !== 'all' && $status !== '') { $where[] = 'status = ?'; $params[] = $status; }
     if ($paymentStatus !== 'all' && $paymentStatus !== '') { $where[] = 'payment_status = ?'; $params[] = $paymentStatus; }
+    if ($attention) $where[] = $attentionPredicate;
     if ($seen === 'new') {
         $where[] = "status = 'new_order'";
     } elseif ($seen === 'seen' && $hasSeen) {
@@ -2866,13 +3008,17 @@ if ($uri === '/admin/orders') {
 
     $countRow = Database::row("SELECT COUNT(*) c FROM orders $whereSql", $params);
     $total = (int)($countRow['c'] ?? 0);
-    $offset = ($page - 1) * $perPage;
-
-    $orders = Database::rows("SELECT * FROM orders $whereSql ORDER BY $orderSql LIMIT $perPage OFFSET $offset", $params);
-    foreach ($orders as &$o) {
-        $o['items'] = Database::rows(
+    $orders = Database::rows("SELECT * FROM orders $whereSql ORDER BY $orderSql", $params);
+    $itemsByOrder = [];
+    if ($orders) {
+        $orderIds = array_map(static fn($order) => (int)$order['id'], $orders);
+        $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
+        $allItems = Database::rows(
             "SELECT oi.*,
-                    COALESCE(pi.image_path, pi.url) AS product_image,
+                    COALESCE(cqr.product_image, oi.custom_product_image, co.banner_image, pi.image_path, pi.url) AS product_image,
+                    cqr.request_code AS custom_quote_code, cqr.product_name AS custom_product_name, cqr.size_dimension AS custom_size_dimension,
+                    cqr.material_type AS custom_material_type, cqr.quantity AS custom_quantity,
+                    cqr.quoted_amount AS custom_amount, cqr.design_fee AS custom_design_fee, cqr.quote_note AS custom_quote_note,
                     af.id AS artwork_file_id,
                     af.original_name AS artwork_original_name,
                     af.filename AS artwork_filename,
@@ -2890,15 +3036,23 @@ if ($uri === '/admin/orders') {
                     pf.mime_type AS design_proof_mime_type
              FROM order_items oi
              LEFT JOIN product_images pi ON pi.product_id = oi.product_id AND pi.is_primary = 1
+             LEFT JOIN custom_quote_requests cqr ON cqr.id = oi.custom_quote_id
+             LEFT JOIN combo_offers co ON co.id = oi.combo_offer_id
              LEFT JOIN order_design_approvals oda ON oda.order_item_id = oi.id
              LEFT JOIN artwork_files af ON af.id = oda.customer_artwork_file_id
              LEFT JOIN artwork_files pf ON pf.id = oda.proof_file_id
-             WHERE oi.order_id=?
-             ORDER BY oi.id ASC",
-            [$o['id']]
+             WHERE oi.order_id IN ($placeholders)
+             ORDER BY oi.order_id, oi.id ASC",
+            $orderIds
         );
+        foreach ($allItems as $item) $itemsByOrder[(int)$item['order_id']][] = $item;
+    }
+    foreach ($orders as &$o) {
+        $o['items'] = $itemsByOrder[(int)$o['id']] ?? [];
         foreach ($o['items'] as &$item) {
-            if (empty($item['design_approval_id'])) {
+            $item['attribute_selections'] = json_decode((string)($item['attribute_selections'] ?? '[]'), true) ?: [];
+            $item['price_breakdown'] = json_decode((string)($item['price_breakdown'] ?? '{}'), true) ?: [];
+            if (empty($item['design_approval_id']) && ($item['item_type'] ?? 'product') === 'product') {
                 $customerArtwork = Database::row(
                     "SELECT af.id FROM artwork_files af
                       WHERE af.order_item_id = ?
@@ -2917,7 +3071,8 @@ if ($uri === '/admin/orders') {
         unset($item);
     }
 
-    view('admin/orders', compact('orders','total','page','perPage','status','search','summaryCounts','statusCounts','paymentStatus','seen','sort','dateFrom','dateTo','hasSeen'));
+    if ($hasSeen) Database::query("UPDATE orders SET is_seen=1 WHERE status='new_order' AND is_seen=0 AND created_at <= NOW()");
+    view('admin/orders', compact('orders','total','page','perPage','status','search','summaryCounts','statusCounts','attentionCounts','attention','paymentStatus','seen','sort','dateFrom','dateTo','hasSeen'));
     exit;
 }
 
@@ -3055,6 +3210,9 @@ if (preg_match('#^/admin/portfolio/edit/(\d+)$#', $uri, $m) && $method === 'GET'
     exit;
 }
 
+if ($uri === '/admin/combo-offers/new' && $method === 'GET') { view('admin/combo-offers-form', ['comboEditId'=>0]); exit; }
+if (preg_match('#^/admin/combo-offers/edit/(\d+)$#', $uri, $m) && $method === 'GET') { view('admin/combo-offers-form', ['comboEditId'=>(int)$m[1]]); exit; }
+
 if (preg_match('#^/admin/deals/edit/(\d+)$#', $uri, $m) && $method === 'GET') {
     view('admin/deals-new', ['dealEditId' => (int)$m[1]]);
     exit;
@@ -3087,6 +3245,7 @@ $adminPage = match(true) {
     $uri === '/admin/products/new' => 'admin/products-new',
     $uri === '/admin/banners'    => 'admin/banners',
     $uri === '/admin/deals'      => 'admin/deals',
+    $uri === '/admin/combo-offers' => 'admin/combo-offers',
     $uri === '/admin/business-needs' => 'admin/business-needs',
     $uri === '/admin/business-needs/new' => 'admin/business-needs-new',
     $uri === '/admin/deals/new'  => 'admin/deals-new',
@@ -3106,6 +3265,7 @@ $adminPage = match(true) {
     $uri === '/admin/backup'     => 'admin/backup',
     $uri === '/admin/order-cleanup' => 'admin/order-cleanup',
     $uri === '/admin/settings'   => 'admin/settings',
+    $uri === '/admin/header-footer' => 'admin/header-footer',
     $uri === '/admin/integrations' => 'admin/integrations',
     $uri === '/admin/audit-logs' => 'admin/audit-logs',
     default                      => null,

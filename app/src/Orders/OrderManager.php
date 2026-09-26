@@ -22,13 +22,19 @@ class OrderManager
             foreach ([
                 "ALTER TABLE orders ADD COLUMN order_type VARCHAR(30) NOT NULL DEFAULT 'normal' AFTER order_id",
                 "ALTER TABLE orders ADD COLUMN custom_quote_id INT UNSIGNED NULL AFTER order_type",
+                "ALTER TABLE orders ADD COLUMN checkout_group_id VARCHAR(80) NULL AFTER custom_quote_id",
+                "CREATE INDEX idx_orders_checkout_group ON orders (checkout_group_id)",
                 "CREATE INDEX idx_orders_order_type ON orders (order_type)",
                 "CREATE INDEX idx_orders_custom_quote ON orders (custom_quote_id)",
                 "ALTER TABLE order_items MODIFY COLUMN product_id INT UNSIGNED NULL",
                 "ALTER TABLE order_items MODIFY COLUMN quality_id INT UNSIGNED NULL",
                 "ALTER TABLE order_items ADD COLUMN item_type VARCHAR(30) NOT NULL DEFAULT 'product' AFTER order_id",
                 "ALTER TABLE order_items ADD COLUMN custom_quote_id INT UNSIGNED NULL AFTER item_type",
+                "ALTER TABLE order_items ADD COLUMN custom_product_image VARCHAR(500) NULL AFTER custom_quote_id",
+                "ALTER TABLE order_items ADD COLUMN combo_offer_id INT UNSIGNED NULL AFTER custom_product_image",
+                "CREATE INDEX idx_order_items_combo_offer ON order_items (combo_offer_id)",
                 "CREATE INDEX idx_order_items_custom_quote ON order_items (custom_quote_id)",
+                "ALTER TABLE custom_quote_requests ADD COLUMN product_image VARCHAR(500) NULL AFTER product_name",
             ] as $sql) { try { \Database::query($sql); } catch (\Throwable) {} }
             self::$customOrderSchemaReady = true;
         } catch (\Throwable $e) {
@@ -173,6 +179,8 @@ class OrderManager
 
     public static function ensureCustomerUpdateSchema(): bool
     {
+        static $ready = false;
+        if ($ready) return true;
         try {
             $hasPending = \Database::row(
                 "SELECT 1 AS ok
@@ -207,7 +215,16 @@ class OrderManager
             if (!$hasAt) {
                 \Database::query("ALTER TABLE orders ADD COLUMN customer_update_at DATETIME NULL AFTER customer_update_type");
             }
+            foreach ([
+                "ALTER TABLE orders ADD COLUMN admin_update_pending TINYINT(1) NOT NULL DEFAULT 0 AFTER customer_update_at",
+                "ALTER TABLE orders ADD COLUMN admin_update_type VARCHAR(80) NULL AFTER admin_update_pending",
+                "ALTER TABLE orders ADD COLUMN admin_update_at DATETIME NULL AFTER admin_update_type",
+                "ALTER TABLE orders ADD COLUMN refund_requested_at DATETIME NULL AFTER admin_update_at",
+                "ALTER TABLE orders ADD COLUMN refund_request_note TEXT NULL AFTER refund_requested_at",
+            ] as $sql) { try { \Database::query($sql); } catch (\Throwable) {} }
             try { \Database::query("CREATE INDEX idx_orders_customer_update ON orders (customer_update_pending, customer_update_at)"); } catch (\Throwable) {}
+            try { \Database::query("CREATE INDEX idx_orders_admin_update ON orders (admin_update_pending, admin_update_at)"); } catch (\Throwable) {}
+            $ready = true;
             return true;
         } catch (\Throwable $e) {
             error_log('Order customer update schema unavailable: ' . $e->getMessage());
@@ -291,6 +308,18 @@ class OrderManager
         );
     }
 
+    public static function markAdminUpdate(int $orderId, string $type): void
+    {
+        if ($orderId <= 0 || !self::ensureCustomerUpdateSchema()) return;
+        \Database::query("UPDATE orders SET admin_update_pending=1, admin_update_type=?, admin_update_at=NOW(), updated_at=NOW() WHERE id=?", [substr($type, 0, 80), $orderId]);
+    }
+
+    public static function clearAdminUpdate(int $orderId): void
+    {
+        if ($orderId <= 0 || !self::ensureCustomerUpdateSchema()) return;
+        \Database::query("UPDATE orders SET admin_update_pending=0, admin_update_type=NULL, admin_update_at=NULL, updated_at=NOW() WHERE id=?", [$orderId]);
+    }
+
     public static function recordDesignEvent(array $event): bool
     {
         if (!self::ensureDesignEventSchema()) return false;
@@ -352,180 +381,63 @@ class OrderManager
     {
         self::ensureWorkflowSchema();
         self::ensureDesignApprovalSchema();
-        // Ensure the additive audit table before checkout starts its DB transaction.
-        // MySQL DDL can implicitly commit active transactions, so never create this table mid-order.
         self::ensureDesignEventSchema();
         self::ensureCustomOrderSchema();
 
         $user = \Auth\Auth::user();
         if (!$user) return ['ok' => false, 'msg' => 'Not authenticated'];
-
         $cartItems = \Cart\Cart::get();
-        $onlyCustomQuoteId = (int)($params['custom_quote_id'] ?? 0);
-        if ($onlyCustomQuoteId) $cartItems = array_values(array_filter($cartItems, static fn($item) => (int)($item['custom_quote_id'] ?? 0) === $onlyCustomQuoteId));
-        if (empty($cartItems)) return ['ok' => false, 'msg' => 'Cart is empty'];
+        if (!$cartItems) return ['ok' => false, 'msg' => 'Cart is empty'];
+        if (array_filter($cartItems, static fn($item) => !empty($item['combo_unavailable']))) return ['ok'=>false,'msg'=>'A Combo Offer in your cart is no longer available.'];
 
-        $couponCode = $params['coupon_code'] ?? null;
-        $totals = \Cart\Cart::totals($cartItems, $couponCode);
-        $billing = self::sanitizeBilling($params['billing'] ?? null);
-        $shipping = self::sanitizeShipping($params['shipping'] ?? null);
-        $saveShippingDefault = !empty($shipping['save_as_default']);
-        $plainNotes = trim((string)($params['notes'] ?? ''));
-        $meta = [];
-        if ($plainNotes !== '') $meta['note'] = $plainNotes;
-        if ($billing !== null) $meta['billing'] = $billing;
-        if ($shipping !== null) $meta['shipping'] = $shipping;
-
-        $storedNotes = $plainNotes;
-        if (!empty($meta)) {
-            $storedNotes = json_encode($meta, JSON_UNESCAPED_UNICODE);
+        $hasCustom = (bool)array_filter($cartItems, static fn($item) => ($item['item_type'] ?? '') === 'custom_quote');
+        $couponCode = $hasCustom ? null : ($params['coupon_code'] ?? null);
+        $globalTotals = \Cart\Cart::totals($cartItems, $couponCode);
+        $checkoutGroup = preg_replace('/[^A-Za-z0-9_-]/', '', (string)($params['checkout_group_id'] ?? '')) ?: ('checkout_'.bin2hex(random_bytes(12)));
+        $existing = \Database::rows("SELECT id FROM orders WHERE checkout_group_id=? AND user_id=? ORDER BY id", [$checkoutGroup,(int)$user['id']]);
+        if ($existing) {
+            $orders=array_values(array_filter(array_map(static fn($row)=>self::getOrder((int)$row['id']),$existing)));
+            return ['ok'=>true,'order'=>$orders[0]??null,'orders'=>$orders,'checkout_group_id'=>$checkoutGroup,'already_processed'=>true];
         }
-        $customQuoteIds = array_values(array_unique(array_filter(array_map('intval', array_column($cartItems, 'custom_quote_id')), static fn($id) => $id > 0)));
-        $hasCustomQuote = !empty($customQuoteIds);
 
-        // Generate readable order ID
-        $orderId = self::generateOrderId();
-        $now = date('Y-m-d H:i:s');
+        $groups=[];$orphan=0;
+        foreach($cartItems as $item){
+            if(($item['item_type']??'')==='custom_quote'){$quoteId=(int)($item['custom_quote_id']??0);$key=$quoteId>0?'custom_'.$quoteId:'custom_orphan_'.(++$orphan);}
+            else $key='regular';
+            $groups[$key][]=$item;
+        }
+        $groupTotals=[];
+        foreach($groups as $key=>$items)$groupTotals[$key]=\Cart\Cart::totals($items,$key==='regular'?$couponCode:null);
+        $groupSum=array_sum(array_column($groupTotals,'total'));
+        if($groupTotals&&abs($globalTotals['total']-$groupSum)>=0.001){$last=array_key_last($groupTotals);$delta=round($globalTotals['total']-$groupSum,2);$groupTotals[$last]['gst_amt']=round($groupTotals[$last]['gst_amt']+$delta,2);$groupTotals[$last]['total']=round($groupTotals[$last]['total']+$delta,2);}
 
-        $db = \Database::get();
-        $dbOrderId = null;
-
-        try {
+        $billing=self::sanitizeBilling($params['billing']??null);$shipping=self::sanitizeShipping($params['shipping']??null);$saveShippingDefault=!empty($shipping['save_as_default']);
+        $plainNotes=trim((string)($params['notes']??''));$meta=[];if($plainNotes!=='')$meta['note']=$plainNotes;if($billing!==null)$meta['billing']=$billing;if($shipping!==null)$meta['shipping']=$shipping;
+        $storedNotes=$meta?json_encode($meta,JSON_UNESCAPED_UNICODE):$plainNotes;$now=date('Y-m-d H:i:s');$db=\Database::get();$created=[];
+        try{
             $db->beginTransaction();
-
-            // Create order
-            $dbOrderId = \Database::insert(
-                "INSERT INTO orders (order_id, order_type, custom_quote_id, user_id, customer_name, customer_email, customer_phone,
-                    subtotal, discount_amount, gst_amount, gst_percent, total_amount,
-                    coupon_code, payment_method, payment_status, status, notes, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new_order', ?, ?)",
-                [
-                    $orderId,
-                    $hasCustomQuote ? 'custom' : 'normal',
-                    $customQuoteIds[0] ?? null,
-                    $user['id'],
-                    $user['name'],
-                    $user['email'],
-                    $user['phone'],
-                    $totals['subtotal'],
-                    $totals['discount'],
-                    $totals['gst_amt'],
-                    $totals['gst_pct'],
-                    $totals['total'],
-                    $couponCode,
-                    $params['payment_method'] ?? 'razorpay',
-                    $params['payment_status'] ?? 'pending',
-                    $storedNotes,
-                    $now,
-                ]
-            );
-
-            // Insert order items (snapshot of cart)
-            foreach ($cartItems as $item) {
-                $orderItemId = \Database::insert(
-                    "INSERT INTO order_items (order_id, item_type, custom_quote_id, product_id, quality_id, quantity,
-                        product_name, quality_name, attribute_selections, design_choice,
-                        design_brief, notes, price_breakdown, total_price, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [
-                        $dbOrderId,
-                        ($item['item_type'] ?? 'product') === 'custom_quote' ? 'custom_quote' : 'product',
-                        !empty($item['custom_quote_id']) ? (int)$item['custom_quote_id'] : null,
-                        ($item['item_type'] ?? 'product') === 'custom_quote' ? null : (int)($item['product_id'] ?? 0),
-                        ($item['item_type'] ?? 'product') === 'custom_quote' ? null : (int)($item['quality_id'] ?? 1),
-                        (int)($item['quantity'] ?? 1),
-                        $item['product_name'],
-                        $item['quality_name'],
-                        $item['attribute_selections'],
-                        $item['design_choice'],
-                        $item['design_brief'],
-                        $item['notes'],
-                        $item['price_breakdown'],
-                        $item['total_price'],
-                        $now,
-                    ]
-                );
-
-                if (!empty($item['custom_quote_id'])) {
-                    \Database::query(
-                        "UPDATE custom_quote_requests SET payment_status=?, status=?, order_id=?, updated_at=NOW() WHERE id=? AND (order_id IS NULL OR order_id=?)",
-                        [($params['payment_status'] ?? 'pending') === 'paid' ? 'paid' : 'payment_pending', ($params['payment_status'] ?? 'pending') === 'paid' ? 'converted_to_order' : 'payment_pending', $dbOrderId, (int)$item['custom_quote_id'], $dbOrderId]
-                    );
+            foreach($groups as $key=>$items){
+                $isCustom=str_starts_with($key,'custom_');$quoteId=$isCustom?(int)($items[0]['custom_quote_id']??0):null;$totals=$groupTotals[$key];$orderId=self::generateOrderId();
+                $dbOrderId=\Database::insert("INSERT INTO orders (order_id,order_type,custom_quote_id,checkout_group_id,user_id,customer_name,customer_email,customer_phone,subtotal,discount_amount,gst_amount,gst_percent,total_amount,coupon_code,payment_method,payment_status,status,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'new_order',?,?)",[$orderId,$isCustom?'custom':'normal',$quoteId?:null,$checkoutGroup,$user['id'],$user['name'],$user['email'],$user['phone'],$totals['subtotal'],$totals['discount'],$totals['gst_amt'],$totals['gst_pct'],$totals['total'],$key==='regular'?$couponCode:null,$params['payment_method']??'razorpay',$params['payment_status']??'pending',$storedNotes,$now]);
+                foreach($items as $item){
+                    $itemType=(string)($item['item_type']??'product');$isCatalog=$itemType==='product';
+                    $orderItemId=\Database::insert("INSERT INTO order_items (order_id,item_type,custom_quote_id,custom_product_image,combo_offer_id,product_id,quality_id,quantity,product_name,quality_name,attribute_selections,design_choice,design_brief,notes,price_breakdown,total_price,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",[$dbOrderId,in_array($itemType,['custom_quote','combo_offer'],true)?$itemType:'product',!empty($item['custom_quote_id'])?(int)$item['custom_quote_id']:null,$itemType==='custom_quote'?(string)($item['product_image']??''):null,!empty($item['combo_offer_id'])?(int)$item['combo_offer_id']:null,$isCatalog?(int)($item['product_id']??0):null,$isCatalog?(int)($item['quality_id']??1):null,(int)($item['quantity']??1),$item['product_name'],$item['quality_name'],$item['attribute_selections'],$item['design_choice'],$item['design_brief'],$item['notes'],$item['price_breakdown'],$item['total_price'],$now]);
+                    if(!empty($item['custom_quote_id']))\Database::query("UPDATE custom_quote_requests SET payment_status=?,status=?,order_id=?,updated_at=NOW() WHERE id=? AND payment_status<>'paid'",[($params['payment_status']??'pending')==='paid'?'paid':'payment_pending',($params['payment_status']??'pending')==='paid'?'converted_to_order':'payment_pending',$dbOrderId,(int)$item['custom_quote_id']]);
+                    if(!empty($item['id']))\Database::query("UPDATE artwork_files SET order_item_id=?,cart_item_id=NULL WHERE cart_item_id=?",[$orderItemId,$item['id']]);
+                    $art=\Database::row("SELECT id FROM artwork_files WHERE order_item_id=? ORDER BY id DESC LIMIT 1",[$orderItemId]);self::ensureDesignApprovalForItem($dbOrderId,$orderItemId,(string)($item['design_choice']??'upload'),$art?(int)$art['id']:null);
                 }
-
-                // Link artwork files
-                if (!empty($item['id'])) {
-                    \Database::query(
-                        "UPDATE artwork_files SET order_item_id = ?, cart_item_id = NULL
-                         WHERE cart_item_id = ?",
-                        [$orderItemId, $item['id']]
-                    );
-                }
-
-                $customerArtwork = \Database::row(
-                    "SELECT id FROM artwork_files WHERE order_item_id = ? ORDER BY id DESC LIMIT 1",
-                    [$orderItemId]
-                );
-                self::ensureDesignApprovalForItem(
-                    (int)$dbOrderId,
-                    (int)$orderItemId,
-                    (string)($item['design_choice'] ?? 'upload'),
-                    $customerArtwork ? (int)$customerArtwork['id'] : null
-                );
+                \Database::insert("INSERT INTO order_status_history(order_id,status,note,created_by,created_at) VALUES(?,'new_order','Order placed',?,?)",[$dbOrderId,'system',$now]);
+                $created[]=['id'=>$dbOrderId,'order_id'=>$orderId,'is_regular'=>!$isCustom];
             }
-
-            // Status history
-            \Database::insert(
-                "INSERT INTO order_status_history (order_id, status, note, created_by, created_at)
-                 VALUES (?, 'new_order', 'Order placed', ?, ?)",
-                [$dbOrderId, 'system', $now]
-            );
-
-            // Mark coupon as used
-            if ($couponCode && $totals['coupon']) {
-                \Database::query(
-                    "UPDATE coupons SET used_count = used_count + 1 WHERE code = ?",
-                    [$couponCode]
-                );
-                \Database::insert(
-                    "INSERT INTO coupon_uses (coupon_id, order_id, user_id, discount_applied, used_at)
-                     VALUES (?, ?, ?, ?, ?)",
-                    [$totals['coupon']['id'], $dbOrderId, $user['id'], $totals['discount'], $now]
-                );
-            }
-
+            if($couponCode&&!empty($globalTotals['coupon'])){$regularOrders=array_values(array_filter($created,fn($row)=>$row['is_regular']));$regularId=(int)($regularOrders[0]['id']??0);\Database::query("UPDATE coupons SET used_count=used_count+1 WHERE code=?",[$couponCode]);if($regularId)\Database::insert("INSERT INTO coupon_uses(coupon_id,order_id,user_id,discount_applied,used_at) VALUES(?,?,?,?,?)",[$globalTotals['coupon']['id'],$regularId,$user['id'],$globalTotals['discount'],$now]);}
             $db->commit();
-        } catch (\Throwable $e) {
-            if ($db->inTransaction()) {
-                $db->rollBack();
-            }
-            error_log('Order placement failed: ' . $e->getMessage());
-            return ['ok' => false, 'msg' => 'Order placement failed. Please try again.'];
-        }
+        }catch(\Throwable $e){if($db->inTransaction())$db->rollBack();error_log('Order placement failed: '.$e->getMessage());return ['ok'=>false,'msg'=>'Order placement failed. Please try again.'];}
 
-        // Non-critical operations after commit should not fail checkout.
-        try {
-            \Cart\Cart::clear($onlyCustomQuoteId ?: null);
-        } catch (\Throwable $e) {
-            error_log('Order placed but cart clear failed: ' . $e->getMessage());
-        }
-
-        $order = null;
-        try {
-            $order = self::getOrder((int)$dbOrderId);
-        } catch (\Throwable $e) {
-            error_log('Order placed but order fetch failed: ' . $e->getMessage());
-        }
-
-        if (!$order) {
-            $order = ['id' => (int)$dbOrderId, 'order_id' => $orderId, 'items' => []];
-        }
-
-        // Async tasks (non-blocking)
-        self::afterOrderPlaced($order);
-        self::saveUserShippingDefault((int)$user['id'], $shipping, $saveShippingDefault);
-
-        return ['ok' => true, 'order' => $order, 'order_id' => $orderId];
+        try{if(($params['payment_method']??'razorpay')!=='razorpay')\Cart\Cart::clearPurchased();}catch(\Throwable $e){error_log('Order placed but cart clear failed: '.$e->getMessage());}
+        $orders=[];foreach($created as $row){try{$order=self::getOrder((int)$row['id']);if($order){$orders[]=$order;self::afterOrderPlaced($order);}}catch(\Throwable $e){error_log('Order fetch failed: '.$e->getMessage());}}
+        self::saveUserShippingDefault((int)$user['id'],$shipping,$saveShippingDefault);
+        $primary=$orders[0]??['id'=>(int)($created[0]['id']??0),'order_id'=>(string)($created[0]['order_id']??''),'items'=>[]];
+        return ['ok'=>true,'order'=>$primary,'orders'=>$orders,'order_id'=>$primary['order_id'],'checkout_group_id'=>$checkoutGroup];
     }
 
     public static function updateStatus(int $orderId, string $status, string $note = '', string $actor = 'admin'): bool
@@ -541,6 +453,7 @@ class OrderManager
         );
         if ($actor !== 'system') {
             self::clearCustomerUpdate($orderId);
+            self::markAdminUpdate($orderId, 'order_status_updated');
         }
 
         \Database::insert(
@@ -652,6 +565,10 @@ class OrderManager
         ]);
         if ($admin) {
             self::clearCustomerUpdate((int)$approval['order_id']);
+            if (in_array($status, ['issue_found', 'proof_uploaded', 'approved'], true)) {
+                $updateType = match ($status) { 'proof_uploaded' => 'admin_proof_uploaded', 'issue_found' => 'admin_issue_marked', default => 'admin_design_approved' };
+                self::markAdminUpdate((int)$approval['order_id'], $updateType);
+            }
         }
 
         self::syncOrderDesignApproved((int)$approval['order_id']);
@@ -701,6 +618,7 @@ class OrderManager
                 'note' => $note,
             ]);
             self::markCustomerUpdate((int)$approval['order_id'], 'customer_design_approved');
+            self::clearAdminUpdate((int)$approval['order_id']);
             self::syncOrderDesignApproved((int)$approval['order_id']);
             return ['ok' => true, 'msg' => 'Design approved successfully.'];
         }
@@ -730,6 +648,7 @@ class OrderManager
                 'note' => $note,
             ]);
             self::markCustomerUpdate((int)$approval['order_id'], 'customer_revision_requested');
+            self::clearAdminUpdate((int)$approval['order_id']);
             return ['ok' => true, 'msg' => 'Revision request sent to admin.'];
         }
 
@@ -769,7 +688,15 @@ class OrderManager
 
         $order['items'] = \Database::rows(
             "SELECT oi.*,
-                    COALESCE(pi.image_path, pi.url) AS product_image,
+                    COALESCE(cqr.product_image, oi.custom_product_image, co.banner_image, pi.image_path, pi.url) AS product_image,
+                    cqr.request_code AS custom_quote_code,
+                    cqr.product_name AS custom_product_name,
+                    cqr.size_dimension AS custom_size_dimension,
+                    cqr.material_type AS custom_material_type,
+                    cqr.quantity AS custom_quantity,
+                    cqr.quoted_amount AS custom_amount,
+                    cqr.design_fee AS custom_design_fee,
+                    cqr.quote_note AS custom_quote_note,
                     af.id AS artwork_file_id,
                     af.filename AS artwork_filename,
                     af.original_name AS artwork_original_name,
@@ -787,6 +714,8 @@ class OrderManager
                     pf.mime_type AS design_proof_mime_type
              FROM order_items oi
              LEFT JOIN product_images pi ON pi.product_id = oi.product_id AND pi.is_primary = 1
+             LEFT JOIN custom_quote_requests cqr ON cqr.id = oi.custom_quote_id
+             LEFT JOIN combo_offers co ON co.id = oi.combo_offer_id
              LEFT JOIN order_design_approvals oda ON oda.order_item_id = oi.id
              LEFT JOIN artwork_files af ON af.id = oda.customer_artwork_file_id
              LEFT JOIN artwork_files pf ON pf.id = oda.proof_file_id
@@ -814,6 +743,7 @@ class OrderManager
 
     public static function getUserOrders(int $userId): array
     {
+        self::ensureCustomerUpdateSchema();
         self::ensureDesignApprovalSchema();
         self::ensureInvoiceSchema();
 
@@ -919,6 +849,9 @@ class OrderManager
     {
         if (!$save || !$shipping || $userId <= 0) return;
         try {
+            \Database::query("CREATE TABLE IF NOT EXISTS user_addresses (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id INT UNSIGNED NOT NULL,label VARCHAR(80) NOT NULL DEFAULT 'Address',business_name VARCHAR(180) NULL,address_line1 VARCHAR(255) NOT NULL,address_line2 VARCHAR(255) NULL,city VARCHAR(120) NOT NULL,state VARCHAR(120) NOT NULL,pincode VARCHAR(20) NOT NULL,is_default TINYINT(1) NOT NULL DEFAULT 0,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,KEY idx_user_addresses_user (user_id,is_default,id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            \Database::query("UPDATE user_addresses SET is_default=0 WHERE user_id=?", [$userId]);
+            \Database::insert("INSERT INTO user_addresses (user_id,label,business_name,address_line1,address_line2,city,state,pincode,is_default,created_at) VALUES (?,'Checkout',?,?,?,?,?,?,1,NOW())", [$userId,$shipping['business_name']??'',$shipping['address_line1']??'',$shipping['address_line2']??'',$shipping['city']??'',$shipping['state']??'',$shipping['pincode']??'']);
             \Database::query(
                 "UPDATE users
                  SET shipping_address_line1 = ?, shipping_address_line2 = ?, shipping_city = ?, shipping_state = ?, shipping_pincode = ?, profile_updated_at = NOW()
