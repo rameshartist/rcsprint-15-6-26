@@ -45,6 +45,13 @@ window.adminPrompt=(message,value='',options={})=>window.adminDialog(message,{..
   <div class="adm-hdr-center"></div>
   <div class="adm-hdr-right">
     <div class="adm-hdr-actions">
+      <div class="adm-notification-center" id="admNotificationCenter">
+        <button class="adm-icon-btn adm-notification-btn" id="admNotificationBtn" type="button" aria-label="Notifications" aria-expanded="false">🔔<b id="admNotificationBadge" hidden>0</b></button>
+        <section class="adm-notification-panel" id="admNotificationPanel" hidden aria-label="Admin notifications">
+          <header><div><strong>Notifications</strong><small>Items requiring your attention</small></div><button type="button" id="admNotificationReadAll">Mark all read</button></header>
+          <div id="admNotificationList"><div class="adm-notification-empty">Loading notifications…</div></div>
+        </section>
+      </div>
       <button class="adm-icon-btn" type="button" aria-label="Fullscreen" onclick="document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();">⛶</button>
       <span class="adm-hdr-divider"></span>
     </div>
@@ -166,11 +173,21 @@ window.adminPrompt=(message,value='',options={})=>window.adminDialog(message,{..
       }
 
       // Lightweight polling updates badges without reloading pages or clearing in-progress forms.
-      let lastLiveCounts = {};
+      let lastLiveCounts = {}, notificationCursor = 0;
+      const notificationCenter=document.getElementById('admNotificationCenter'),notificationBtn=document.getElementById('admNotificationBtn'),notificationPanel=document.getElementById('admNotificationPanel'),notificationList=document.getElementById('admNotificationList'),notificationBadge=document.getElementById('admNotificationBadge');
+      const notificationEscape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+      function setNotificationBadge(count){count=Number(count)||0;notificationBadge.textContent=count>99?'99+':String(count);notificationBadge.hidden=count<1;}
+      function notificationMarkup(items){return items.length?items.map(item=>`<a class="adm-notification-item ${item.read_at?'':'is-unread'}" href="${notificationEscape(item.action_url)}" data-notification-id="${Number(item.id)}"><span class="adm-notification-type">${item.type==='quote'?'💬':item.type==='refund'?'↩':'📦'}</span><span><strong>${notificationEscape(item.title)}</strong><small>${notificationEscape(item.message)}</small><time>${notificationEscape(item.source_created_at||item.created_at||'')}</time></span></a>`).join(''):'<div class="adm-notification-empty">You are all caught up.</div>';}
+      async function loadNotificationPanel(){try{const payload=await fetch('/admin/api/notifications',{cache:'no-store'}).then(r=>r.json());if(!payload.ok)return;notificationList.innerHTML=notificationMarkup(payload.notifications||[]);notificationCursor=Math.max(notificationCursor,Number(payload.cursor)||0);setNotificationBadge(payload.unread);}catch(_){notificationList.innerHTML='<div class="adm-notification-empty">Could not load notifications.</div>';}}
+      async function markNotificationsRead(id=null){await fetch('/admin/api/notifications/read',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':'<?= htmlspecialchars($csrf??'',ENT_QUOTES) ?>'},body:JSON.stringify(id?{id}:{}),keepalive:true});if(id){notificationList.querySelector(`[data-notification-id="${id}"]`)?.classList.remove('is-unread');}else notificationList.querySelectorAll('.is-unread').forEach(el=>el.classList.remove('is-unread'));loadNotificationPanel();}
+      notificationBtn?.addEventListener('click',e=>{e.stopPropagation();const open=notificationPanel.hidden;notificationPanel.hidden=!open;notificationBtn.setAttribute('aria-expanded',open?'true':'false');if(open)loadNotificationPanel();});
+      document.getElementById('admNotificationReadAll')?.addEventListener('click',()=>markNotificationsRead());
+      notificationList?.addEventListener('click',e=>{const link=e.target.closest('[data-notification-id]');if(link)markNotificationsRead(Number(link.dataset.notificationId));});
+      document.addEventListener('click',e=>{if(notificationCenter&&!notificationCenter.contains(e.target)){notificationPanel.hidden=true;notificationBtn?.setAttribute('aria-expanded','false');}});
       async function pollAdminUpdates() {
         if (document.visibilityState !== 'visible') return;
         try {
-          const response = await fetch('/admin/api/live-updates', {headers:{'Accept':'application/json'}, cache:'no-store'});
+          const response = await fetch('/admin/api/live-updates?after='+notificationCursor, {headers:{'Accept':'application/json'}, cache:'no-store'});
           if (!response.ok) return;
           const payload = await response.json();
           if (!payload.ok) return;
@@ -180,12 +197,16 @@ window.adminPrompt=(message,value='',options={})=>window.adminDialog(message,{..
             if (badge) { badge.textContent = count.toLocaleString('en-IN'); badge.hidden = count < 1; }
           });
           window.dispatchEvent(new CustomEvent('admin:live-updates', {detail:{counts:payload.counts||{}, previous:lastLiveCounts}}));
+          setNotificationBadge(payload.notification_unread||0);
+          notificationCursor=Math.max(notificationCursor,Number(payload.notification_cursor)||0);
+          if((payload.notifications||[]).length){window.dispatchEvent(new CustomEvent('admin:new-notifications',{detail:{notifications:payload.notifications}}));if(!notificationPanel.hidden)loadNotificationPanel();}
           lastLiveCounts = payload.counts || {};
         } catch (_) {}
       }
       window.adminPollUpdates = pollAdminUpdates;
-      window.setInterval(pollAdminUpdates, 15000);
+      window.setInterval(pollAdminUpdates, 20000);
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pollAdminUpdates(); });
+      pollAdminUpdates();
     })();
     </script>
 

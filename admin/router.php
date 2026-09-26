@@ -471,23 +471,30 @@ if (str_starts_with($uri, '/admin/api/')) {
         $count = static function (string $sql): int { try { return (int)(Database::row($sql)['c'] ?? 0); } catch (\Throwable) { return 0; } };
         $approvals = 0;
         if (\Auth\Auth::isSuperAdmin()) foreach (['products','categories','coupons','home_deals'] as $table) $approvals += $count("SELECT COUNT(*) c FROM {$table} WHERE approval_status='pending'");
+        $adminId=(int)(\Auth\Auth::admin()['id']??0); $notificationFeed=['notifications'=>[],'unread'=>0,'cursor'=>0];
+        try { $notificationFeed=\Notifications\AdminNotificationManager::feed($adminId,max(0,(int)($_GET['after']??0)),20); } catch (\Throwable $e) { error_log('Admin notification feed unavailable: '.$e->getMessage()); }
         json(['ok'=>true,'counts'=>[
             'orders'=>$count("SELECT COUNT(*) c FROM orders WHERE status='new_order'"),
             'custom_orders'=>$count("SELECT COUNT(*) c FROM custom_quote_requests WHERE status='new'"),
             'leads'=>$count("SELECT COUNT(*) c FROM contact_leads WHERE COALESCE(is_read,0)=0"),
             'approvals'=>$approvals,
-        ],'server_time'=>date(DATE_ATOM)]);
+        ],'notifications'=>$notificationFeed['notifications'],'notification_unread'=>$notificationFeed['unread'],'notification_cursor'=>$notificationFeed['cursor'],'server_time'=>date(DATE_ATOM)]);
     }
+    if ($uri === '/admin/api/notifications' && $method === 'GET') { $adminId=(int)(\Auth\Auth::admin()['id']??0); try { json(['ok'=>true,...\Notifications\AdminNotificationManager::feed($adminId,max(0,(int)($_GET['after']??0)),50)]); } catch (\Throwable $e) { error_log($e->getMessage()); json(['ok'=>false,'msg'=>'Notifications are temporarily unavailable.'],500); } }
+    if ($uri === '/admin/api/notifications/read' && $method === 'POST') { \Auth\Auth::verifyCsrf(); \Notifications\AdminNotificationManager::markRead((int)(\Auth\Auth::admin()['id']??0),!empty($body['id'])?(int)$body['id']:null); json(['ok'=>true]); }
     if ($uri === '/admin/api/site-chrome' && $method === 'GET') { json(['ok'=>true,'data'=>\Site\SiteChromeManager::payload()]); }
     if ($uri === '/admin/api/site-chrome' && $method === 'POST') {
+        \Auth\Auth::verifyCsrf();
         try { \Site\SiteChromeManager::save($body); json(['ok'=>true]); }
         catch (\Throwable $e) { error_log($e->getMessage()); json(['ok'=>false,'msg'=>'Could not save header and footer.'],500); }
     }
     if ($uri === '/admin/api/site-chrome/logo' && $method === 'POST') {
+        \Auth\Auth::verifyCsrf();
         $file=$_FILES['image']??null;
-        if(!$file||$file['error']!==UPLOAD_ERR_OK) json(['ok'=>false,'msg'=>'Choose an image.'],422);
+        if(!$file||$file['error']!==UPLOAD_ERR_OK||!is_uploaded_file($file['tmp_name'])) json(['ok'=>false,'msg'=>'Choose an image.'],422);
         $ext=strtolower(pathinfo((string)$file['name'],PATHINFO_EXTENSION));
-        if(!in_array($ext,['jpg','jpeg','png','webp'],true)) json(['ok'=>false,'msg'=>'JPG, PNG or WEBP only.'],422);
+        $mime=mime_content_type($file['tmp_name'])?:'';
+        if(!in_array($ext,['jpg','jpeg','png','webp'],true)||!in_array($mime,['image/jpeg','image/png','image/webp'],true)) json(['ok'=>false,'msg'=>'JPG, PNG or WEBP only.'],422);
         if((int)$file['size']>5*1024*1024) json(['ok'=>false,'msg'=>'Image must be under 5 MB.'],422);
         $dir=PUBLIC_PATH.'/uploads/site/'; if(!is_dir($dir)) mkdir($dir,0755,true);
         $name='logo-'.bin2hex(random_bytes(8)).'.'.$ext;
@@ -1800,7 +1807,7 @@ if (str_starts_with($uri, '/admin/api/')) {
     if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && $method === 'GET') { $offer=\Combos\ComboOfferManager::find((int)$m[1]); json(['ok'=>(bool)$offer,'offer'=>$offer],$offer?200:404); }
     if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && in_array($method,['PUT','POST'],true)) { \Auth\Auth::verifyCsrf(); try { json(\Combos\ComboOfferManager::save($body,(int)$m[1])); } catch (\Throwable $e) { json(['ok'=>false,'msg'=>'Could not update combo offer.'],500); } }
     if (preg_match('#^/admin/api/combo-offers/(\d+)$#',$uri,$m) && $method === 'DELETE') { \Auth\Auth::verifyCsrf(); \Combos\ComboOfferManager::delete((int)$m[1]); json(['ok'=>true]); }
-    if (preg_match('#^/admin/api/combo-offers/(\d+)/toggle$#',$uri,$m) && $method === 'POST') { \Auth\Auth::verifyCsrf(); $offer=\Combos\ComboOfferManager::find((int)$m[1]); if(!$offer) json(['ok'=>false,'msg'=>'Combo offer not found'],404); $active=empty($offer['is_active'])?1:0; Database::query("UPDATE combo_offers SET is_active=?,updated_at=NOW() WHERE id=?",[$active,(int)$m[1]]); json(['ok'=>true,'is_active'=>$active]); }
+    if (preg_match('#^/admin/api/combo-offers/(\d+)/toggle$#',$uri,$m) && $method === 'POST') { \Auth\Auth::verifyCsrf(); $id=(int)$m[1]; $offer=\Combos\ComboOfferManager::find($id); if(!$offer) json(['ok'=>false,'msg'=>'Combo offer not found'],404); $active=empty($offer['is_active'])?1:0; if($active&&!empty($offer['show_on_home'])){$occupant=\Combos\ComboOfferManager::positionOccupant((string)$offer['layout_slot'],$id);if($occupant)json(['ok'=>false,'msg'=>'This position is already occupied by “'.$occupant['title'].'”. Deactivate that offer or edit this offer position first.'],409);} Database::query("UPDATE combo_offers SET is_active=?,updated_at=NOW() WHERE id=?",[$active,$id]); json(['ok'=>true,'is_active'=>$active]); }
     if ($uri === '/admin/api/combo-offers/upload' && $method === 'POST') { \Auth\Auth::verifyCsrf(); $file=$_FILES['image']??null; if(!$file||$file['error']!==UPLOAD_ERR_OK||!is_uploaded_file($file['tmp_name'])) json(['ok'=>false,'msg'=>'Choose an image.'],422); if((int)$file['size']<=0||(int)$file['size']>6*1024*1024) json(['ok'=>false,'msg'=>'Image must be under 6 MB.'],422); $ext=strtolower(pathinfo($file['name'],PATHINFO_EXTENSION)); $mime=mime_content_type($file['tmp_name'])?:''; if(!in_array($ext,['jpg','jpeg','png','webp'],true)||!in_array($mime,['image/jpeg','image/png','image/webp'],true)) json(['ok'=>false,'msg'=>'JPG, PNG or WEBP only.'],422); $dir=PUBLIC_PATH.'/uploads/combos/'; if(!is_dir($dir)) mkdir($dir,0755,true); $name='combo-'.bin2hex(random_bytes(8)).'.'.$ext; if(!move_uploaded_file($file['tmp_name'],$dir.$name)) json(['ok'=>false,'msg'=>'Upload failed.'],500); json(['ok'=>true,'path'=>'/uploads/combos/'.$name]); }
 
     if ($uri === '/admin/api/deals' && $method === 'GET') {

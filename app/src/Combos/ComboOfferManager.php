@@ -31,7 +31,24 @@ final class ComboOfferManager
     public static function home(): array
     {
         self::ensureSchema();
-        return \Database::rows("SELECT * FROM combo_offers WHERE is_active=1 AND show_on_home=1 ORDER BY FIELD(layout_slot,'large','wide','square_3','square_4','square'),sort_order,id DESC LIMIT 4");
+        $rows = \Database::rows("SELECT * FROM combo_offers WHERE is_active=1 AND show_on_home=1 ORDER BY updated_at DESC,id DESC");
+        $slots = [];
+        foreach ($rows as $row) {
+            $slot = ($row['layout_slot'] ?? '') === 'square' ? 'square_3' : (string)($row['layout_slot'] ?? '');
+            if (!in_array($slot, ['large','wide','square_3','square_4'], true) || isset($slots[$slot])) continue;
+            $row['layout_slot'] = $slot;
+            $slots[$slot] = $row;
+        }
+        $ordered = [];
+        foreach (['large','wide','square_3','square_4'] as $slot) if (isset($slots[$slot])) $ordered[] = $slots[$slot];
+        return $ordered;
+    }
+
+    public static function positionOccupant(string $slot, int $exceptId = 0): ?array
+    {
+        self::ensureSchema();
+        if (!in_array($slot, ['large','wide','square_3','square_4'], true)) return null;
+        return \Database::row("SELECT id,title,slug FROM combo_offers WHERE is_active=1 AND show_on_home=1 AND layout_slot=? AND id<>? LIMIT 1", [$slot,$exceptId]);
     }
 
     public static function productsForAdmin(): array
@@ -102,6 +119,11 @@ final class ComboOfferManager
         $discount = $subtotal > 0 ? round((1 - ($offerPrice / $subtotal)) * 100, 2) : 0;
 
         $values = [$title,$slug,trim((string)($data['badge']??'')),trim((string)($data['short_description']??'')),trim((string)($data['description']??'')),trim((string)($data['banner_image']??'')),$subtotal,$discount,$offerPrice,in_array(($data['layout_slot']??''),['large','wide','square_3','square_4'],true)?$data['layout_slot']:'square_3',trim((string)($data['cta_text']??'View Offer'))?:'View Offer',!empty($data['show_title_home'])?1:0,!empty($data['show_title_detail'])?1:0,!empty($data['show_badge_home'])?1:0,!empty($data['show_badge_detail'])?1:0,!empty($data['show_cta_home'])?1:0,!empty($data['show_cta_detail'])?1:0,!empty($data['show_short_description_home'])?1:0,!empty($data['show_short_description_detail'])?1:0,!empty($data['show_description_home'])?1:0,!empty($data['show_description_detail'])?1:0];
+        $current = $id ? \Database::row("SELECT is_active,show_on_home FROM combo_offers WHERE id=?", [$id]) : null;
+        if ($current && !empty($current['is_active']) && !empty($current['show_on_home'])) {
+            $occupant = self::positionOccupant((string)$values[9], $id);
+            if ($occupant) return ['ok'=>false,'msg'=>'That homepage position is already used by “'.$occupant['title'].'”. Deactivate it or choose another position.'];
+        }
         $db = \Database::get();
         try {
             $db->beginTransaction();

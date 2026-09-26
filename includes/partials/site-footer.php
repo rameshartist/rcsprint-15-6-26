@@ -58,7 +58,7 @@ $sfCategoryHref = static function (string $label, array $aliases = [], string $f
 
       <nav class="footer-col" aria-label="Quick links">
         <h3>Quick Links</h3>
-        <?php if (!empty($sfChromeNav['footer_quick'])): foreach ($sfChromeNav['footer_quick'] as $navItem): ?><a href="<?= htmlspecialchars((string)$navItem['url'], ENT_QUOTES) ?>"><?= htmlspecialchars((string)$navItem['label']) ?></a><?php endforeach; else: ?>
+        <?php if (!empty($sfChromeNav['footer_quick'])): foreach ($sfChromeNav['footer_quick'] as $navItem): if(!(int)($navItem['is_active']??1))continue; ?><a href="<?= htmlspecialchars((string)$navItem['url'], ENT_QUOTES) ?>"><?= htmlspecialchars((string)$navItem['label']) ?></a><?php endforeach; else: ?>
         <a href="/">Home</a>
         <a href="/about">About Us</a>
         <a href="/categories">Products</a>
@@ -70,7 +70,7 @@ $sfCategoryHref = static function (string $label, array $aliases = [], string $f
 
       <nav class="footer-col" aria-label="Products">
         <h3>Products</h3>
-        <?php if (!empty($sfChromeNav['footer_products'])): foreach ($sfChromeNav['footer_products'] as $navItem): ?><a href="<?= htmlspecialchars((string)$navItem['url'], ENT_QUOTES) ?>"><?= htmlspecialchars((string)$navItem['label']) ?></a><?php endforeach; else: ?>
+        <?php if (!empty($sfChromeNav['footer_products'])): foreach ($sfChromeNav['footer_products'] as $navItem): if(!(int)($navItem['is_active']??1))continue; ?><a href="<?= htmlspecialchars((string)$navItem['url'], ENT_QUOTES) ?>"><?= htmlspecialchars((string)$navItem['label']) ?></a><?php endforeach; else: ?>
         <a href="<?= $sfCategoryHref('Visiting Card', ['Visiting Cards', 'Business Cards'], 'visiting-cards') ?>">Visiting Card</a>
         <a href="<?= $sfCategoryHref('Brochure', ['Brochures'], 'brochures') ?>">Brochure</a>
         <a href="<?= $sfCategoryHref('Flyer', ['Flyers'], 'flyers') ?>">Flyer</a>
@@ -82,7 +82,7 @@ $sfCategoryHref = static function (string $label, array $aliases = [], string $f
 
       <nav class="footer-col" aria-label="Customer service">
         <h3>Customer Service</h3>
-        <?php if (!empty($sfChromeNav['footer_service'])): foreach ($sfChromeNav['footer_service'] as $navItem): ?><a href="<?= htmlspecialchars((string)$navItem['url'], ENT_QUOTES) ?>"><?= htmlspecialchars((string)$navItem['label']) ?></a><?php endforeach; else: ?>
+        <?php if (!empty($sfChromeNav['footer_service'])): foreach ($sfChromeNav['footer_service'] as $navItem): if(!(int)($navItem['is_active']??1))continue; ?><a href="<?= htmlspecialchars((string)$navItem['url'], ENT_QUOTES) ?>"><?= htmlspecialchars((string)$navItem['label']) ?></a><?php endforeach; else: ?>
         <a href="<?= ($user ?? null) ? '/profile' : '/login' ?>">My Account</a>
         <a href="/my-orders">Track Order</a>
         <a href="/shipping-policy">Shipping Policy</a>
@@ -93,7 +93,7 @@ $sfCategoryHref = static function (string $label, array $aliases = [], string $f
       </nav>
 
       <div class="footer-col footer-contact-col">
-        <h3>Contact Us</h3>
+        <h3><?= htmlspecialchars((string)($sfChromeSettings['footer_contact_heading']??'Contact Us')) ?></h3>
         <div class="footer-contact-item">
           <i class="fa-solid fa-location-dot" aria-hidden="true"></i>
           <span><?= $sfAddr ?></span>
@@ -108,13 +108,13 @@ $sfCategoryHref = static function (string $label, array $aliases = [], string $f
         </a>
         <div class="footer-contact-item">
           <i class="fa-regular fa-clock" aria-hidden="true"></i>
-          <span>Mon - Sat: 10:00 AM - 7:00 PM</span>
+          <span><?= htmlspecialchars((string)($sfChromeSettings['footer_hours']??'Mon - Sat: 10:00 AM - 7:00 PM')) ?></span>
         </div>
       </div>
 
       <div class="footer-col footer-newsletter-col">
-        <h3>Newsletter</h3>
-        <p>Subscribe to get special offers, free giveaways, and useful print updates.</p>
+        <h3><?= htmlspecialchars((string)($sfChromeSettings['footer_newsletter_heading']??'Newsletter')) ?></h3>
+        <p><?= htmlspecialchars((string)($sfChromeSettings['footer_newsletter_text']??'Subscribe to get special offers, free giveaways, and useful print updates.')) ?></p>
         <form class="footer-newsletter" action="/categories" method="get">
           <label class="sr-only" for="footerEmail">Enter your email</label>
           <input id="footerEmail" name="email" type="email" placeholder="Enter your email" autocomplete="email">
@@ -123,9 +123,13 @@ $sfCategoryHref = static function (string $label, array $aliases = [], string $f
       </div>
     </div>
 
+    <?php $socials=['facebook'=>'Facebook','instagram'=>'Instagram','linkedin'=>'LinkedIn','youtube'=>'YouTube']; ?>
+    <nav class="footer-social-links" aria-label="Social media">
+      <?php foreach($socials as $key=>$label): $socialUrl=trim((string)($sfChromeSettings['social_'.$key]??'')); if($socialUrl==='')continue; ?><a href="<?= htmlspecialchars($socialUrl,ENT_QUOTES) ?>" target="_blank" rel="noopener noreferrer"><?= htmlspecialchars($label) ?></a><?php endforeach; ?>
+    </nav>
     <div class="footer-bottom">
-      <div class="footer-copy">© <?= date('Y') ?> <?= $sfBizName ?>. All Rights Reserved.</div>
-      <div class="footer-developed">Developed By Prakash Karena</div>
+      <div class="footer-copy"><?= htmlspecialchars(str_replace(['{year}','{business}'],[date('Y'),html_entity_decode($sfBizName,ENT_QUOTES,'UTF-8')],(string)($sfChromeSettings['footer_copyright']??'© {year} {business}. All Rights Reserved.'))) ?></div>
+      <div class="footer-developed"><?= htmlspecialchars((string)($sfChromeSettings['footer_developer']??'Developed By Prakash Karena')) ?></div>
     </div>
   </div>
 </footer>
