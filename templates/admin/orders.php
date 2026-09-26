@@ -198,13 +198,13 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
     if ($hasCustomerUpdate) $cardClasses[] = 'adm-order-card--customer-update';
     if ($hasDesignAttention) $cardClasses[] = 'adm-order-card--design-attention';
   ?>
-  <article id="ord-<?= (int)$o['id'] ?>" class="<?= htmlspecialchars(implode(' ', $cardClasses)) ?>" data-order-card>
+  <article id="ord-<?= (int)$o['id'] ?>" class="<?= htmlspecialchars(implode(' ', $cardClasses)) ?>" data-order-card data-order-status="<?= htmlspecialchars($orderStatus) ?>">
     <div class="adm-order-card-head">
       <button class="adm-order-card-summary" type="button" aria-expanded="false" data-order-toggle onclick="toggleOrderCard(this)">
         <span class="adm-order-card-id"><strong>#<?= htmlspecialchars($o['order_id']) ?></strong><small><?= htmlspecialchars(app_datetime((string)($o['created_at'] ?? ''), 'd M Y, H:i')) ?> · <?= htmlspecialchars($orderAge) ?></small></span>
         <span class="adm-order-card-customer"><strong><?= htmlspecialchars($o['customer_name']) ?></strong><small><?= htmlspecialchars($o['customer_phone']) ?><?= !empty($o['customer_email']) ? ' · ' . htmlspecialchars($o['customer_email']) : '' ?></small></span>
         <span class="adm-order-card-meta"><b>₹<?= number_format((float)$o['total_amount']) ?></b><small><?= count($o['items'] ?? []) ?> item(s)</small></span>
-        <span class="adm-order-card-badges"><?php if (($o['order_type'] ?? 'normal') === 'custom'): ?><span class="badge b-purple">Custom Order</span><?php endif; ?><span class="badge <?= $statusColors[$orderStatus] ?? 'b-blue' ?>"><?= htmlspecialchars($statusLabels[$orderStatus] ?? $orderStatus) ?></span><span class="badge <?= $o['payment_status'] === 'paid' ? 'b-green' : 'b-amber' ?>"><?= ucfirst($o['payment_status']) ?></span><?php if ($hasCustomerUpdate): ?><span class="badge b-red adm-order-customer-update-badge"><?= htmlspecialchars($customerUpdateLabel) ?></span><?php elseif ($hasDesignAttention): ?><span class="badge b-red adm-order-customer-update-badge">Design Pending</span><?php endif; ?></span>
+        <span class="adm-order-card-badges"><?php if (($o['order_type'] ?? 'normal') === 'custom'): ?><span class="badge b-purple">Custom Order</span><?php endif; ?><span class="badge <?= $statusColors[$orderStatus] ?? 'b-blue' ?>" data-order-status-badge><?= htmlspecialchars($statusLabels[$orderStatus] ?? $orderStatus) ?></span><span class="badge <?= $o['payment_status'] === 'paid' ? 'b-green' : 'b-amber' ?>"><?= ucfirst($o['payment_status']) ?></span><?php if ($hasCustomerUpdate): ?><span class="badge b-red adm-order-customer-update-badge"><?= htmlspecialchars($customerUpdateLabel) ?></span><?php elseif ($hasDesignAttention): ?><span class="badge b-red adm-order-customer-update-badge">Design Pending</span><?php endif; ?></span>
       </button>
       <div class="adm-order-card-quick" aria-label="Quick order actions">
         <select class="fi fi-sel" id="ord_status_<?= (int)$o['id'] ?>" aria-label="Update status for order <?= htmlspecialchars($o['order_id']) ?>"><?php foreach (['new_order','received','design_approved','printing','other_process','ready','delivered','cancelled'] as $s): ?><option value="<?= $s ?>" <?= $orderStatus === $s ? 'selected' : '' ?>><?= $statusLabels[$s] ?? ucfirst($s) ?></option><?php endforeach; ?></select>
@@ -247,7 +247,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
               $customNote = trim((string)($item['custom_quote_note'] ?: $item['notes'] ?: $item['design_brief'] ?: ''));
             ?>
             <div class="ord-custom-detail-row" data-custom-order-item>
-              <div class="ord-custom-image"><span>Custom Quote</span><div class="ord-custom-thumb"><?php if ($productImg !== ''): ?><img src="<?= htmlspecialchars($productImg) ?>" alt="<?= htmlspecialchars($customName) ?>"><?php else: ?>📦<?php endif; ?></div><?php if ($customQuoteId): ?><a class="btn btn-outline btn-sm" href="/admin/custom-orders#quote-<?= $customQuoteId ?>"><?= htmlspecialchars((string)($item['custom_quote_code'] ?? ('CQ-' . str_pad((string)$customQuoteId, 4, '0', STR_PAD_LEFT)))) ?></a><?php endif; ?></div>
+              <div class="ord-custom-id"><span>Custom Order ID</span><?php if ($customQuoteId): ?><a class="ord-custom-id-link" href="/admin/custom-orders#quote-<?= $customQuoteId ?>"><?= htmlspecialchars((string)($item['custom_quote_code'] ?? ('CQ-' . str_pad((string)$customQuoteId, 4, '0', STR_PAD_LEFT)))) ?></a><?php else: ?><strong>Not linked</strong><?php endif; ?></div>
               <div><span>Product Name</span><strong><?= htmlspecialchars($customName) ?></strong></div>
               <div><span>Size / Dimensions</span><strong><?= htmlspecialchars($customSize ?: 'Not set') ?></strong></div>
               <div><span>Material</span><strong><?= htmlspecialchars($customMaterial ?: 'Not set') ?></strong></div>
@@ -257,6 +257,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
               <div class="ord-custom-note"><span>Admin Quote Note</span><p><?= nl2br(htmlspecialchars($customNote ?: 'No quote note added.')) ?></p></div>
             </div>
             <?php endif; ?>
+            <?php $workflowQuantity=$isCustomItem?$customQuantity:(string)($item['quantity']??1);$workflowName=$isCustomItem?$customName:(string)($item['product_name']??'Product'); ?>
             <?php if (($item['item_type'] ?? '') === 'combo_offer'): $comboSnapshot=is_array($item['price_breakdown']??null)?$item['price_breakdown']:[]; ?>
             <div class="ord-combo-detail"><div class="ord-combo-title"><img src="<?= htmlspecialchars($productImg ?: '/assets/images/RCS%20PRINT%20LOGO.png') ?>" alt=""><div><span>Combo Offer</span><strong><?= htmlspecialchars((string)$item['product_name']) ?></strong><small>Paid item price: ₹<?= number_format((float)$item['total_price'],2) ?> · Saving: ₹<?= number_format((float)($comboSnapshot['saving']??0),2) ?></small></div></div><div class="ord-combo-components"><?php foreach(($comboSnapshot['items']??[]) as $component): ?><span><b><?= htmlspecialchars((string)($component['product_name']??'Product')) ?></b><?= number_format((int)($component['quantity']??1)) ?> qty · ₹<?= number_format((float)($component['regular_price']??0),2) ?></span><?php endforeach;?><?php foreach(($comboSnapshot['custom_items']??[]) as $component): ?><span><b><?= htmlspecialchars((string)($component['item_name']??'Custom item')) ?></b><?= number_format((int)($component['quantity']??1)) ?> qty · ₹<?= number_format((float)($component['item_price']??0),2) ?> each</span><?php endforeach;?></div></div>
             <?php endif; ?>
@@ -266,7 +267,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
                   <span class="ord-item-thumb">
                     <?php if ($productImg !== ''): ?><img src="<?= htmlspecialchars($productImg) ?>" alt="<?= htmlspecialchars($item['product_name'] ?? 'Product') ?>" loading="lazy"><?php else: ?>📦<?php endif; ?>
                   </span>
-                  <div><div class="ord-item-name"><?= htmlspecialchars($item['product_name']) ?> <span class="ord-design-inline-choice"><?= $isRcsDesign ? 'RCS Design' : 'Customer Upload' ?></span></div><div class="ord-meta"><?= number_format((float)$item['quantity']) ?> qty, <?= htmlspecialchars($item['quality_name']) ?> · <?= $isRcsDesign ? 'RCS will prepare proof' : 'Customer artwork approval required' ?></div></div>
+                  <div><div class="ord-item-name"><?= htmlspecialchars($workflowName) ?> <span class="ord-design-inline-choice"><?= $isRcsDesign ? 'RCS Design' : 'Customer Upload' ?></span></div><div class="ord-meta"><?= htmlspecialchars((string)$workflowQuantity) ?> qty<?= $isCustomItem?'':', '.htmlspecialchars((string)$item['quality_name']) ?> · <?= $isRcsDesign ? 'RCS will prepare proof' : 'Customer artwork approval required' ?></div></div>
                 </div>
                 <div class="ord-design-badges"><span class="badge <?= $isRcsDesign ? 'b-purple' : 'b-blue' ?>"><?= $isRcsDesign ? '🎨 RCS Design' : '📁 Customer Upload' ?></span><span class="badge <?= $designApprovalColors[$approvalStatus] ?? 'b-amber' ?>"><?= htmlspecialchars($designApprovalLabels[$approvalStatus] ?? $approvalStatus) ?></span></div>
               </div>
@@ -314,8 +315,8 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
               <?php if (!empty($item['design_admin_note'])): ?><div class="ord-design-note <?= $approvalStatus === 'issue_found' ? 'ord-design-note--issue' : '' ?>"><?= $approvalStatus === 'issue_found' ? '⚠ Issue for customer: ' : 'Note: ' ?><?= htmlspecialchars($item['design_admin_note']) ?></div><?php endif; ?>
               <?php if (!empty($item['design_customer_note'])): ?>
                 <?php $noteMeta = $designCustomerNoteMeta($approvalStatus); ?>
-                <div class="ord-design-note ord-design-note--customer">
-                  <button class="ord-customer-note-chip ord-customer-note-chip--<?= htmlspecialchars($noteMeta['tone']) ?>" type="button" onclick='openCustomerDesignNote(<?= json_encode($item['product_name'] ?? 'Product', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($item['design_customer_note'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($noteMeta['title'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($noteMeta['hint'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($noteMeta['tone'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)'><?= htmlspecialchars($noteMeta['label']) ?></button>
+                <div class="ord-design-note ord-design-note--customer ord-design-note--<?= htmlspecialchars($noteMeta['tone']) ?>">
+                  <strong><?= htmlspecialchars($noteMeta['label']) ?></strong><span>Customer Revision Details:</span><p><?= nl2br(htmlspecialchars((string)$item['design_customer_note'])) ?></p>
                 </div>
               <?php endif; ?>
             </div>
@@ -357,12 +358,6 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
 </div>
 <?php endif; ?>
 
-<div id="revisionModal" class="ord-revision-modal" style="display:none">
-  <div class="ord-revision-dialog">
-    <div class="ord-revision-head"><div><strong id="revisionModalTitle">Revision Request</strong><small id="revisionModalHint">Customer message for this item</small></div><button type="button" onclick="closeRevisionNote()">×</button></div>
-    <p id="revisionModalText"></p>
-  </div>
-</div>
 
 <div id="addrModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:1200;align-items:center;justify-content:center;padding:18px">
   <div style="width:min(620px,100%);max-height:86vh;overflow:auto;background:var(--white);border-radius:12px;border:1px solid var(--border);box-shadow:var(--sh-lg);padding:18px">
@@ -439,20 +434,6 @@ function toast(msg, type='info') {
   const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg; w.appendChild(t);
   requestAnimationFrame(() => requestAnimationFrame(() => t.classList.add('show')));
   setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 2800);
-}
-
-function openCustomerDesignNote(product, note, title='Customer Note', hint='Customer message for this item', tone='note') {
-  const modal = document.getElementById('revisionModal');
-  const dialog = modal?.querySelector('.ord-revision-dialog');
-  if (dialog) dialog.dataset.tone = tone || 'note';
-  document.getElementById('revisionModalTitle').textContent = `${title || 'Customer Note'} — ${product || 'Item'}`;
-  document.getElementById('revisionModalHint').textContent = hint || 'Customer message for this item';
-  document.getElementById('revisionModalText').textContent = note || 'No message provided.';
-  if (modal) modal.style.display = 'flex';
-}
-function closeRevisionNote() {
-  const modal = document.getElementById('revisionModal');
-  if (modal) modal.style.display = 'none';
 }
 
 function updOrdFromSel(id) {
@@ -704,5 +685,13 @@ function closeAddrModal() {
   }
 })();
 
+
+const linkedAdminOrder=location.hash.match(/^#ord-(\d+)$/);if(linkedAdminOrder){const linkedCard=document.getElementById(`ord-${linkedAdminOrder[1]}`);if(linkedCard){setOrderCardOpen(linkedCard,true,false);setTimeout(()=>linkedCard.scrollIntoView({block:'start'}),80);}}
+window.addEventListener('admin:live-updates',event=>{
+  const labels={new_order:'New Order',received:'Received',design_approved:'Design Approved',printing:'Printing',other_process:'Other Process',processing:'Other Process',ready:'Dispatched',delivered:'Delivered',cancelled:'Cancelled',whatsapp_pending:'WA Pending'};
+  const colors={new_order:'b-blue',received:'b-blue',design_approved:'b-green',printing:'b-orange',other_process:'b-amber',processing:'b-amber',ready:'b-green',delivered:'b-ink',cancelled:'b-red',whatsapp_pending:'b-amber'};
+  const updates={customer_design_approved:'Design Approved by Customer',customer_revision_requested:'Revision Requested',customer_artwork_uploaded:'Customer Artwork Uploaded',customer_artwork_reuploaded:'Artwork Reuploaded',customer_cancelled:'Cancelled by Customer',customer_refund_requested:'Refund Requested'};
+  (event.detail.orderChanges||[]).forEach(change=>{const card=document.getElementById(`ord-${Number(change.id)}`);if(!card)return;const old=card.dataset.orderStatus||'';card.classList.remove(`adm-order-card--${old}`,'adm-order-card--new');card.dataset.orderStatus=change.status;card.classList.add(`adm-order-card--${change.status}`);if(change.status==='new_order')card.classList.add('adm-order-card--new');const badge=card.querySelector('[data-order-status-badge]');if(badge){badge.textContent=labels[change.status]||change.status;badge.className=`badge ${colors[change.status]||'b-blue'}`;badge.dataset.orderStatusBadge='';}const select=card.querySelector('[id^=ord_status_]');if(select)select.value=change.status;const hasUpdate=Number(change.customer_update_pending)===1;card.classList.toggle('adm-order-card--customer-update',hasUpdate);let updateBadge=card.querySelector('.adm-order-customer-update-badge');if(hasUpdate&&!updateBadge){updateBadge=document.createElement('span');updateBadge.className='badge b-red adm-order-customer-update-badge';card.querySelector('.adm-order-card-badges')?.appendChild(updateBadge);}if(updateBadge){updateBadge.textContent=updates[change.customer_update_type]||'Customer Update';updateBadge.hidden=!hasUpdate;}});
+});
 </script>
 </body></html>

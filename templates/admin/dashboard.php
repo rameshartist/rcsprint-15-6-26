@@ -21,9 +21,11 @@ include __DIR__ . '/layout.php';
   </section>
 
   <section class="dash-ref-main-row">
-    <article class="dash-ref-card dash-ref-revenue">
-      <div class="dash-ref-card-head"><div><h2>Revenue Overview</h2><small id="dashUpdated">Syncing live dashboard…</small></div><button class="dash-ref-select" type="button">Last 6 Months⌄</button></div>
-      <div class="dash-ref-chart" id="revChart"><div class="dash-ref-empty">Loading…</div></div>
+    <article class="dash-ref-card dash-ref-actions dash-ref-actions--full">
+      <div class="dash-ref-card-head"><div><h2>Quick Actions</h2><small id="dashUpdated">Live dashboard</small></div></div>
+      <div class="dash-ref-actions-grid">
+        <a href="/admin/products/new"><span class="c-blue">⬡</span><b>Add Product</b></a><a href="/admin/orders"><span class="c-green">▤</span><b>View Orders</b></a><a href="/admin/coupons"><span class="c-purple">◆</span><b>Create Coupon</b></a><a href="/admin/export/orders" target="_blank"><span class="c-orange">⇩</span><b>Export Orders</b></a><a href="/admin/customers"><span class="c-pink">●</span><b>Manage Users</b></a><a href="/admin/analytics"><span class="c-indigo">▮</span><b>Reports</b></a><a href="/admin/settings"><span class="c-slate">⚙</span><b>Settings</b></a>
+      </div>
     </article>
 
     <article class="dash-ref-card dash-ref-queue">
@@ -37,30 +39,6 @@ include __DIR__ . '/layout.php';
     </article>
   </section>
 
-  <section class="dash-ref-bottom-row">
-    <article class="dash-ref-card dash-ref-orders">
-      <div class="dash-ref-card-head"><div><h2>Recent New Orders</h2></div><a href="/admin/orders?status=new_order">View All Orders</a></div>
-      <div class="dash-ref-table-wrap">
-        <table class="dash-ref-table">
-          <thead><tr><th>Order ID</th><th>Customer</th><th>Product</th><th>Amount</th><th>Status</th><th>Time</th><th></th></tr></thead>
-          <tbody id="newOrdersList"><tr><td colspan="7"><div class="dash-ref-empty">Loading…</div></td></tr></tbody>
-        </table>
-      </div>
-    </article>
-
-    <article class="dash-ref-card dash-ref-actions">
-      <div class="dash-ref-card-head"><div><h2>Quick Actions</h2></div></div>
-      <div class="dash-ref-actions-grid">
-        <a href="/admin/products/new"><span class="c-blue">⬡</span><b>Add Product</b></a>
-        <a href="/admin/orders"><span class="c-green">▤</span><b>View Orders</b></a>
-        <a href="/admin/coupons"><span class="c-purple">◆</span><b>Create Coupon</b></a>
-        <a href="/admin/export/orders" target="_blank"><span class="c-orange">⇩</span><b>Export Orders</b></a>
-        <a href="/admin/customers"><span class="c-pink">●</span><b>Manage Users</b></a>
-        <a href="/admin/analytics"><span class="c-indigo">▮</span><b>Reports</b></a>
-        <a href="/admin/settings"><span class="c-slate">⚙</span><b>Settings</b></a>
-      </div>
-    </article>
-  </section>
 </div>
 
 <script>
@@ -110,10 +88,8 @@ async function loadDash(){
   setTrend('tr-customers', s.total_customers_trend, s.total_customers_trend_label);
   if (upd) upd.textContent = 'Last updated: ' + new Date().toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'});
   if (btn) btn.classList.remove('loading');
-  drawRevenue(res.monthly || []);
   drawQueue(res.queue || {});
   drawProducts(res.top_products || []);
-  drawOrders(res.recent_new_orders || []);
 }
 function drawRevenue(monthly){
   const el = document.getElementById('revChart');

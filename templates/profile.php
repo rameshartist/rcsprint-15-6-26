@@ -172,7 +172,7 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
             'admin_proof_uploaded' => 'Proof Ready — Your Approval Required',
             'admin_issue_marked' => 'Artwork Action Required',
             'admin_design_approved' => 'Design Approved',
-            'order_status_updated' => 'Order Status Updated',
+            'order_status_updated' => $statusLabels[$status] ?? ucfirst(str_replace('_',' ',$status)),
             'invoice_uploaded' => 'Invoice Available',
             'shipping_updated' => 'Shipping Details Updated',
             default => 'New Order Update',
@@ -1145,7 +1145,7 @@ function restoreOpenAccountOrders(shouldScroll = false) {
   const pendingKey = sessionStorage.getItem(ACCOUNT_PENDING_OPEN_ORDER_KEY) || '';
   const keys = [...new Set([hashKey, pendingKey, ...getStoredAccountOrders()].filter(Boolean))];
   if (!keys.length) return;
-  setAccountTab(sessionStorage.getItem(ACCOUNT_OPEN_TAB_KEY) || 'orders', false);
+  if (hashKey || pendingKey) setAccountTab('orders', false);
   let scrollTarget = null;
   keys.forEach((key) => {
     const detail = Array.from(document.querySelectorAll('.account-order-detail')).find(item => item.dataset.orderDetail === key);

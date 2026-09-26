@@ -612,6 +612,9 @@ if ($uri === '/api/payment/verify' && $method === 'POST') {
     if ($razorpayOrderId === '' || $razorpayPaymentId === '' || $razorpaySignature === '') {
         json(['ok' => false, 'msg' => 'Missing payment verification fields'], 422);
     }
+    if (!\Payment\Razorpay::verifyPayment($razorpayOrderId,$razorpayPaymentId,$razorpaySignature)) {
+        json(['ok'=>false,'msg'=>'Payment verification failed.'],400);
+    }
 
     // Idempotency: if this payment ID is already recorded, return existing order directly.
     $existingOrder = \Payment\Razorpay::findOrderByPaymentId($razorpayPaymentId);
@@ -626,6 +629,7 @@ if ($uri === '/api/payment/verify' && $method === 'POST') {
         'payment_status' => 'pending',
         'billing'        => $body['billing'] ?? null,
         'shipping'       => $body['shipping'] ?? null,
+        'checkout_group_id' => $razorpayOrderId,
     ]);
 
     if (!$placeResult['ok']) json($placeResult);
@@ -660,10 +664,7 @@ if ($uri === '/api/orders/whatsapp' && $method === 'POST') {
         'shipping'       => $body['shipping'] ?? null,
     ]);
 
-    if ($result['ok']) {
-        // Update status to whatsapp_pending
-        \Orders\OrderManager::updateStatus($result['order']['id'], 'whatsapp_pending', 'Placed via WhatsApp');
-    }
+    if ($result['ok']) foreach(($result['orders']??[$result['order']]) as $placedOrder) \Orders\OrderManager::updateStatus((int)$placedOrder['id'], 'whatsapp_pending', 'Placed via WhatsApp');
 
     json($result);
 }

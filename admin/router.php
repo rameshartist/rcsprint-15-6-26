@@ -473,12 +473,19 @@ if (str_starts_with($uri, '/admin/api/')) {
         if (\Auth\Auth::isSuperAdmin()) foreach (['products','categories','coupons','home_deals'] as $table) $approvals += $count("SELECT COUNT(*) c FROM {$table} WHERE approval_status='pending'");
         $adminId=(int)(\Auth\Auth::admin()['id']??0); $notificationFeed=['notifications'=>[],'unread'=>0,'cursor'=>0];
         try { $notificationFeed=\Notifications\AdminNotificationManager::feed($adminId,max(0,(int)($_GET['after']??0)),20); } catch (\Throwable $e) { error_log('Admin notification feed unavailable: '.$e->getMessage()); }
+        $changedSince=trim((string)($_GET['changed_since']??''));$changedAt=null;
+        if($changedSince!==''){try{$changedAt=(new DateTimeImmutable($changedSince))->setTimezone(new DateTimeZone(APP_TIMEZONE))->format('Y-m-d H:i:s');}catch(\Throwable){$changedAt=null;}}
+        $orderChanges=[];$quoteChanges=[];
+        if($changedAt){
+            try{$orderChanges=Database::rows("SELECT id,status,payment_status,customer_update_pending,customer_update_type,updated_at FROM orders WHERE updated_at>? ORDER BY updated_at,id LIMIT 80",[$changedAt]);}catch(\Throwable){}
+            try{$quoteChanges=Database::rows("SELECT id,status,payment_status,customer_update_pending,customer_update_type,is_seen,updated_at FROM custom_quote_requests WHERE updated_at>? ORDER BY updated_at,id LIMIT 80",[$changedAt]);}catch(\Throwable){}
+        }
         json(['ok'=>true,'counts'=>[
             'orders'=>$count("SELECT COUNT(*) c FROM orders WHERE status='new_order'"),
             'custom_orders'=>$count("SELECT COUNT(*) c FROM custom_quote_requests WHERE status='new'"),
             'leads'=>$count("SELECT COUNT(*) c FROM contact_leads WHERE COALESCE(is_read,0)=0"),
             'approvals'=>$approvals,
-        ],'notifications'=>$notificationFeed['notifications'],'notification_unread'=>$notificationFeed['unread'],'notification_cursor'=>$notificationFeed['cursor'],'server_time'=>date(DATE_ATOM)]);
+        ],'notifications'=>$notificationFeed['notifications'],'notification_unread'=>$notificationFeed['unread'],'notification_cursor'=>$notificationFeed['cursor'],'order_changes'=>$orderChanges,'quote_changes'=>$quoteChanges,'server_time'=>date(DATE_ATOM)]);
     }
     if ($uri === '/admin/api/notifications' && $method === 'GET') { $adminId=(int)(\Auth\Auth::admin()['id']??0); try { json(['ok'=>true,...\Notifications\AdminNotificationManager::feed($adminId,max(0,(int)($_GET['after']??0)),50)]); } catch (\Throwable $e) { error_log($e->getMessage()); json(['ok'=>false,'msg'=>'Notifications are temporarily unavailable.'],500); } }
     if ($uri === '/admin/api/notifications/read' && $method === 'POST') { \Auth\Auth::verifyCsrf(); \Notifications\AdminNotificationManager::markRead((int)(\Auth\Auth::admin()['id']??0),!empty($body['id'])?(int)$body['id']:null); json(['ok'=>true]); }

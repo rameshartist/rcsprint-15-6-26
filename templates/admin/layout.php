@@ -12,6 +12,9 @@ $adminPageClass = 'admin-page-' . preg_replace('/[^a-z0-9-]+/i', '-', (string)($
 $admin = \Auth\Auth::admin();
 $isSuperAdmin = \Auth\Auth::isSuperAdmin();
 $adminRoleLabel = $isSuperAdmin ? 'Super Admin' : 'Admin';
+$adminBrandLogo='/assets/images/rcs-graphic-logo.png';
+try{$adminBrandLogo=(string)(\Site\SiteChromeManager::settings()['header_logo']??$adminBrandLogo);}catch(\Throwable){}
+if($adminBrandLogo===''||(!str_starts_with($adminBrandLogo,'/')&&!preg_match('#^https?://#i',$adminBrandLogo)))$adminBrandLogo='/assets/images/rcs-graphic-logo.png';
 $adminNewOrderCount = 0;
 try { $adminNewOrderCount = (int)(Database::row("SELECT COUNT(*) AS c FROM orders WHERE status='new_order'")['c'] ?? 0); } catch (\Throwable) {}
 $adminNewCustomCount = 0;
@@ -72,7 +75,7 @@ window.adminPrompt=(message,value='',options={})=>window.adminDialog(message,{..
     <!-- Sidebar -->
     <div class="adm-sb" id="admSidebar">
       <div class="adm-sb-logo adm-sb-logo-img">
-        <img src="/assets/images/RCS%20PRINT%20LOGO-white.png" alt="RCS Print Logo" loading="eager" decoding="async">
+        <img src="<?= htmlspecialchars($adminBrandLogo,ENT_QUOTES) ?>" alt="RCS Print Logo" loading="eager" decoding="async" onerror="this.onerror=null;this.src='/assets/images/rcs-graphic-logo.png'">
         <div class="adm-sb-s">Admin Panel</div>
       </div>
       <div class="adm-nl">Main</div>
@@ -173,7 +176,7 @@ window.adminPrompt=(message,value='',options={})=>window.adminDialog(message,{..
       }
 
       // Lightweight polling updates badges without reloading pages or clearing in-progress forms.
-      let lastLiveCounts = {}, notificationCursor = 0;
+      let lastLiveCounts = {}, notificationCursor = 0, liveChangedSince = '';
       const notificationCenter=document.getElementById('admNotificationCenter'),notificationBtn=document.getElementById('admNotificationBtn'),notificationPanel=document.getElementById('admNotificationPanel'),notificationList=document.getElementById('admNotificationList'),notificationBadge=document.getElementById('admNotificationBadge');
       const notificationEscape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
       function setNotificationBadge(count){count=Number(count)||0;notificationBadge.textContent=count>99?'99+':String(count);notificationBadge.hidden=count<1;}
@@ -187,7 +190,7 @@ window.adminPrompt=(message,value='',options={})=>window.adminDialog(message,{..
       async function pollAdminUpdates() {
         if (document.visibilityState !== 'visible') return;
         try {
-          const response = await fetch('/admin/api/live-updates?after='+notificationCursor, {headers:{'Accept':'application/json'}, cache:'no-store'});
+          const response = await fetch('/admin/api/live-updates?after='+notificationCursor+'&changed_since='+encodeURIComponent(liveChangedSince), {headers:{'Accept':'application/json'}, cache:'no-store'});
           if (!response.ok) return;
           const payload = await response.json();
           if (!payload.ok) return;
@@ -196,11 +199,11 @@ window.adminPrompt=(message,value='',options={})=>window.adminDialog(message,{..
             const badge = document.querySelector(`[data-admin-live-count="${key}"]`);
             if (badge) { badge.textContent = count.toLocaleString('en-IN'); badge.hidden = count < 1; }
           });
-          window.dispatchEvent(new CustomEvent('admin:live-updates', {detail:{counts:payload.counts||{}, previous:lastLiveCounts}}));
+          window.dispatchEvent(new CustomEvent('admin:live-updates', {detail:{counts:payload.counts||{},previous:lastLiveCounts,orderChanges:payload.order_changes||[],quoteChanges:payload.quote_changes||[]}}));
           setNotificationBadge(payload.notification_unread||0);
           notificationCursor=Math.max(notificationCursor,Number(payload.notification_cursor)||0);
           if((payload.notifications||[]).length){window.dispatchEvent(new CustomEvent('admin:new-notifications',{detail:{notifications:payload.notifications}}));if(!notificationPanel.hidden)loadNotificationPanel();}
-          lastLiveCounts = payload.counts || {};
+          lastLiveCounts=payload.counts||{};liveChangedSince=payload.server_time||liveChangedSince;
         } catch (_) {}
       }
       window.adminPollUpdates = pollAdminUpdates;
