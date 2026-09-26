@@ -45,7 +45,12 @@ window.adminPrompt=(message,value='',options={})=>window.adminDialog(message,{..
       <span></span><span></span><span></span>
     </button>
   </div>
-  <div class="adm-hdr-center"></div>
+  <div class="adm-hdr-center">
+    <form class="adm-global-search" action="/admin/orders" method="get" role="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 20-4.35-4.35a7.5 7.5 0 1 0-1.4 1.4L19.6 21 21 20ZM5 11a6 6 0 1 1 12 0 6 6 0 0 1-12 0Z"/></svg>
+      <input name="search" type="search" placeholder="Search orders by ID or customer…" aria-label="Search orders">
+    </form>
+  </div>
   <div class="adm-hdr-right">
     <div class="adm-hdr-actions">
       <div class="adm-notification-center" id="admNotificationCenter">
@@ -60,7 +65,7 @@ window.adminPrompt=(message,value='',options={})=>window.adminDialog(message,{..
     </div>
     <div class="adm-user-menu" id="admUserMenu">
       <button class="adm-user-btn adm-user-btn-pro" id="admUserBtn" type="button" aria-expanded="false" aria-label="Admin account menu">
-        <span><?= strtoupper(substr((string)($admin['name'] ?? 'A'), 0, 1)) ?></span><b>⌄</b>
+        <span><?= strtoupper(substr((string)($admin['name'] ?? 'A'), 0, 1)) ?></span><em><strong><?= htmlspecialchars($admin['name'] ?? 'Admin') ?></strong><small><?= htmlspecialchars($adminRoleLabel) ?></small></em><b>⌄</b>
       </button>
       <div class="adm-user-panel adm-user-panel-pro" id="admUserPanel">
         <div class="adm-user-name"><strong><?= htmlspecialchars($admin['name'] ?? 'Admin') ?></strong><small><?= htmlspecialchars($adminRoleLabel) ?></small></div>

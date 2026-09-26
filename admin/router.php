@@ -1093,11 +1093,12 @@ if (str_starts_with($uri, '/admin/api/')) {
             'delivered' => (int)(Database::row("SELECT COUNT(*) as c FROM orders WHERE status='delivered'")['c'] ?? 0),
         ];
         $byStatus    = Database::rows("SELECT status, COUNT(*) as count FROM orders GROUP BY status");
-        $monthly     = Database::rows("SELECT DATE_FORMAT(created_at,'%b %Y') as month, SUM(total_amount) as revenue, COUNT(*) as orders FROM orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH) GROUP BY YEAR(created_at), MONTH(created_at) ORDER BY created_at ASC");
+        $monthly     = Database::rows("SELECT DATE_FORMAT(created_at,'%b %Y') as month, SUM(total_amount) as revenue, COUNT(*) as orders FROM orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH) AND payment_status='paid' GROUP BY YEAR(created_at), MONTH(created_at) ORDER BY MIN(created_at) ASC");
         $topProducts = Database::rows("SELECT product_name, COUNT(*) as count, SUM(total_price) as revenue FROM order_items GROUP BY product_name ORDER BY count DESC LIMIT 8");
         $recentOrders= Database::rows("SELECT o.*, COUNT(oi.id) as item_count, SUBSTRING_INDEX(GROUP_CONCAT(oi.product_name ORDER BY oi.id SEPARATOR ', '), ',', 1) as product_summary FROM orders o LEFT JOIN order_items oi ON oi.order_id=o.id GROUP BY o.id ORDER BY o.created_at DESC LIMIT 10");
         $recentNewOrders = Database::rows("SELECT o.*, COUNT(oi.id) as item_count, SUBSTRING_INDEX(GROUP_CONCAT(oi.product_name ORDER BY oi.id SEPARATOR ', '), ',', 1) as product_summary FROM orders o LEFT JOIN order_items oi ON oi.order_id=o.id WHERE $newOrderWhere GROUP BY o.id ORDER BY o.created_at DESC LIMIT 6");
-        json(['ok'=>true,'stats'=>$stats,'queue'=>$queue,'by_status'=>$byStatus,'monthly'=>$monthly,'top_products'=>$topProducts,'recent_orders'=>$recentOrders,'recent_new_orders'=>$recentNewOrders,'seen_supported'=>$hasSeen]);
+        $recentCustomers = Database::rows("SELECT id,name,email,created_at FROM users ORDER BY created_at DESC,id DESC LIMIT 6");
+        json(['ok'=>true,'stats'=>$stats,'queue'=>$queue,'by_status'=>$byStatus,'monthly'=>$monthly,'top_products'=>$topProducts,'recent_orders'=>$recentOrders,'recent_new_orders'=>$recentNewOrders,'recent_customers'=>$recentCustomers,'seen_supported'=>$hasSeen]);
     }
 
     if ($uri === '/admin/api/order-notifications' && $method === 'GET') {
