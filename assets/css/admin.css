@@ -1201,3 +1201,6 @@ body.admin-page-dashboard .dash-ref-empty{min-height:80px;display:grid;place-ite
 .adm-design-choice input:checked+span{border-color:#6d28d9;background:#f5f3ff;box-shadow:0 0 0 3px rgba(109,40,217,.08)}
 .adm-design-choice i{color:#6d28d9;font-size:24px}.adm-design-choice strong{font-size:15px}.adm-design-choice small{color:#64748b;line-height:1.5}
 @media(max-width:700px){.dash-ref-title-actions{margin-left:0}.dash-date-form input{min-width:0}.adm-design-choice{grid-template-columns:1fr}}
+
+/* Give the dashboard reporting controls comfortable space from the right edge. */
+@media(min-width:901px){body.admin-page-dashboard .dash-ref-title-actions{flex:1;margin-left:clamp(28px,5vw,88px);margin-right:clamp(18px,2.4vw,42px);justify-content:flex-end}body.admin-page-dashboard .dash-date-form{column-gap:16px}body.admin-page-dashboard .dash-date-form button{margin-left:12px}}

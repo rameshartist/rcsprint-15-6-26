@@ -446,26 +446,48 @@ class OrderManager
     public static function createByAdmin(array $data, int $adminId): array
     {
         self::ensureCustomOrderSchema(); self::ensureDesignApprovalSchema(); self::ensureWorkflowSchema();
-        $userId=(int)($data['user_id']??0);$createdUser=false;$temporaryPassword=null;
+        $userId=(int)($data['user_id']??0);$createdUser=false;$temporaryPassword=null;$user=null;
         $name=trim((string)($data['customer_name']??''));$email=strtolower(trim((string)($data['customer_email']??'')));$phone=trim((string)($data['customer_phone']??''));
         if($userId>0)$user=\Database::row("SELECT * FROM users WHERE id=?",[$userId]);
         else{
             if($name===''||!filter_var($email,FILTER_VALIDATE_EMAIL)||strlen(preg_replace('/\D+/','',$phone))<7)return ['ok'=>false,'msg'=>'Valid customer name, email and mobile number are required.'];
-            $user=\Database::row("SELECT * FROM users WHERE email=? OR phone=? LIMIT 1",[$email,$phone]);
-            if(!$user){$temporaryPassword=preg_replace('/\D+/','',$phone);$userId=\Database::insert("INSERT INTO users(name,email,phone,company,password,marketing_consent,created_at) VALUES(?,?,?,'',?,0,NOW())",[$name,$email,$phone,password_hash($temporaryPassword,PASSWORD_BCRYPT,['cost'=>10])]);$user=\Database::row("SELECT * FROM users WHERE id=?",[$userId]);$createdUser=true;}
+            $emailUser=\Database::row("SELECT * FROM users WHERE email=? LIMIT 1",[$email]);
+            $phoneUser=\Database::row("SELECT * FROM users WHERE phone=? LIMIT 1",[$phone]);
+            if($emailUser&&$phoneUser&&(int)$emailUser['id']!==(int)$phoneUser['id'])return ['ok'=>false,'msg'=>'This email and mobile number belong to different customer accounts. Please select the correct existing customer.'];
+            $user=$emailUser?:$phoneUser;
         }
-        if(!$user)return ['ok'=>false,'msg'=>'Customer account was not found.'];$userId=(int)$user['id'];
+        if($userId>0&&!$user)return ['ok'=>false,'msg'=>'Customer account was not found. Please select it again.'];
         $productId=(int)($data['product_id']??0);$quantity=max(1,(int)($data['quantity']??0));$designChoice=in_array(($data['design_choice']??''),['upload','rcs'],true)?(string)$data['design_choice']:'upload';
         $product=\Catalog\ProductCatalog::byId($productId);if(!$product||empty($product['is_active']))return ['ok'=>false,'msg'=>'Select an active product.'];
         $categoryId=(int)($data['category_id']??0);if($categoryId<=0||(int)($product['category_id']??0)!==$categoryId)return ['ok'=>false,'msg'=>'The selected product does not belong to this category. Please select it again.'];
         $pricing=\Cart\Pricing::calculate($productId,1,$quantity,[],$designChoice);if(!($pricing['ok']??false))return $pricing;
         $item=['total_price'=>(float)$pricing['total']];$totals=\Cart\Cart::totals([$item]);$notes=trim((string)($data['notes']??''));$now=date('Y-m-d H:i:s');$db=\Database::get();
-        try{$db->beginTransaction();$orderId=self::generateOrderId();$dbOrderId=\Database::insert("INSERT INTO orders(order_id,order_type,checkout_group_id,order_source,created_by_admin_id,user_id,customer_name,customer_email,customer_phone,subtotal,discount_amount,gst_amount,gst_percent,total_amount,payment_method,payment_status,status,notes,created_at) VALUES(?,'normal',?,'admin',?,?,?,?,?,?,?,?,?,?,?,'razorpay','pending','new_order',?,?)",[$orderId,'admin_'.bin2hex(random_bytes(10)),$adminId,$userId,$user['name'],$user['email'],$user['phone'],$totals['subtotal'],0,$totals['gst_amt'],$totals['gst_pct'],$totals['total'],$notes,$now]);
+        try{
+            $db->beginTransaction();
+            if(!$user){
+                $temporaryPassword=preg_replace('/\D+/','',$phone);
+                $userId=(int)\Database::insert("INSERT INTO users(name,email,phone,company,password,marketing_consent,created_at) VALUES(?,?,?,'',?,0,NOW())",[$name,$email,$phone,password_hash($temporaryPassword,PASSWORD_BCRYPT,['cost'=>10])]);
+                $user=['id'=>$userId,'name'=>$name,'email'=>$email,'phone'=>$phone];$createdUser=true;
+            }else{$userId=(int)$user['id'];}
+            $orderId=self::generateOrderId();
+            $dbOrderId=(int)\Database::insert(
+                "INSERT INTO orders(order_id,order_type,checkout_group_id,order_source,created_by_admin_id,user_id,customer_name,customer_email,customer_phone,subtotal,discount_amount,gst_amount,gst_percent,total_amount,payment_method,payment_status,status,notes,created_at)
+                 VALUES(?,'normal',?,'admin',?,?,?,?,?,?,?,?,?,?,'razorpay','pending','new_order',?,?)",
+                [$orderId,'admin_'.bin2hex(random_bytes(10)),$adminId,$userId,$user['name'],$user['email'],$user['phone'],$totals['subtotal'],0,$totals['gst_amt'],$totals['gst_pct'],$totals['total'],$notes,$now]
+            );
             $orderItemId=\Database::insert("INSERT INTO order_items(order_id,item_type,product_id,quality_id,quantity,product_name,quality_name,attribute_selections,design_choice,design_brief,notes,price_breakdown,total_price,created_at) VALUES(?,'product',?,NULL,?,?,?,'[]',?,?,?,?,?,?)",[$dbOrderId,$productId,$quantity,$product['name'],'Standard',$designChoice,trim((string)($data['design_brief']??'')),$notes,json_encode($pricing['breakdown'],JSON_UNESCAPED_UNICODE),$pricing['total'],$now]);
             self::ensureDesignApprovalForItem($dbOrderId,$orderItemId,$designChoice,null);\Database::insert("INSERT INTO order_status_history(order_id,status,note,created_by,created_at) VALUES(?,'new_order','Order added by admin',?,?)",[$dbOrderId,'admin:'.$adminId,$now]);$db->commit();
-            $order=self::getOrder($dbOrderId);try{\Sheets\SheetsSync::syncOrder($order);}catch(\Throwable){}
-            return ['ok'=>true,'order'=>$order,'customer_created'=>$createdUser,'temporary_password'=>$createdUser?$temporaryPassword:null];
-        }catch(\Throwable $e){if($db->inTransaction())$db->rollBack();error_log('Admin order creation failed: '.$e->getMessage());return ['ok'=>false,'msg'=>'Order could not be created. Please verify the selected pricing tier.'];}
+        }catch(\Throwable $e){
+            if($db->inTransaction())$db->rollBack();
+            error_log('Admin order creation failed ['.$e->getCode().']: '.$e->getMessage());
+            $message='Order could not be saved because the order database schema is incomplete. Please apply the pending order migrations and retry.';
+            if($e instanceof \PDOException){$sqlState=(string)($e->errorInfo[0]??$e->getCode());$driverCode=(int)($e->errorInfo[1]??0);if($sqlState==='23000'&&$driverCode===1062)$message='A customer or order with the same unique information already exists. Refresh the page and retry using the existing customer.';elseif($sqlState==='23000')$message='Order data did not match an existing database relationship. Please reselect the customer and product, then retry.';elseif($sqlState==='42S22')$message='A required order database migration is pending. Please apply the latest migrations and retry.';}
+            return ['ok'=>false,'msg'=>$message];
+        }
+        $order=null;try{$order=self::getOrder($dbOrderId);}catch(\Throwable $e){error_log('Admin order created but detail loading failed: '.$e->getMessage());}
+        $order=$order?:['id'=>$dbOrderId,'order_id'=>$orderId,'customer_name'=>$user['name'],'customer_email'=>$user['email'],'customer_phone'=>$user['phone'],'total_amount'=>$totals['total'],'payment_status'=>'pending','order_source'=>'admin'];
+        try{\Sheets\SheetsSync::syncOrder($order);}catch(\Throwable $e){error_log('Admin order Sheets sync failed: '.$e->getMessage());}
+        return ['ok'=>true,'order'=>$order,'customer_created'=>$createdUser,'temporary_password'=>$createdUser?$temporaryPassword:null];
     }
 
     public static function updateStatus(int $orderId, string $status, string $note = '', string $actor = 'admin'): bool
@@ -826,8 +848,13 @@ class OrderManager
 
     private static function generateOrderId(): string
     {
-        $count = \Database::row("SELECT COUNT(*) as c FROM orders")['c'] ?? 0;
-        return 'RCS' . str_pad((string)((int)$count + 1001), 5, '0', STR_PAD_LEFT);
+        // COUNT(*) can reuse an existing ID after test orders are deleted. Continue
+        // from the greatest issued RCS number instead, preserving the public format.
+        $row = \Database::row(
+            "SELECT MAX(CASE WHEN order_id REGEXP '^RCS[0-9]+$' THEN CAST(SUBSTRING(order_id,4) AS UNSIGNED) END) AS max_number FROM orders"
+        );
+        $next = max(1000, (int)($row['max_number'] ?? 0)) + 1;
+        return 'RCS' . str_pad((string)$next, 5, '0', STR_PAD_LEFT);
     }
 
     private static function sanitizeBilling(mixed $billing): ?array
