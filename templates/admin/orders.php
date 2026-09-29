@@ -110,7 +110,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
 <section class="adm-orders-command">
   <div class="adm-orders-command-bg" aria-hidden="true"></div>
   <div class="adm-orders-head adm-orders-head--compact">
-    <div aria-hidden="true"></div>
+    <a href="/admin/orders/new" class="btn btn-blue btn-sm">＋ Add Order</a>
     <a href="/admin/export/orders" class="btn btn-outline btn-sm adm-orders-export" target="_blank">⬇ Export CSV</a>
   </div>
 

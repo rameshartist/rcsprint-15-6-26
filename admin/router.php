@@ -3250,7 +3250,22 @@ if (preg_match('#^/admin/portfolio/edit/(\d+)$#', $uri, $m) && $method === 'GET'
 
 if ($uri === '/admin/combo-offers/new' && $method === 'GET') { view('admin/combo-offers-form', ['comboEditId'=>0]); exit; }
 if (preg_match('#^/admin/combo-offers/edit/(\d+)$#', $uri, $m) && $method === 'GET') { view('admin/combo-offers-form', ['comboEditId'=>(int)$m[1]]); exit; }
-if ($uri === '/admin/orders/new' && $method === 'GET') { $products=\Catalog\ProductCatalog::all(true);$tiersByProduct=[];foreach(Database::rows("SELECT product_id,quantity,price FROM product_quantity_tiers ORDER BY product_id,quantity") as $tier)$tiersByProduct[(int)$tier['product_id']][]=$tier;foreach($products as &$product)$product['quantity_tiers']=$tiersByProduct[(int)$product['id']]??[];unset($product);view('admin/order-new',['customers'=>Database::rows("SELECT id,name,email,phone FROM users ORDER BY name LIMIT 1000"),'products'=>$products]); exit; }
+if ($uri === '/admin/orders/new' && $method === 'GET') {
+    $products = array_values(array_filter(\Catalog\ProductCatalog::all(true), static fn(array $product): bool => !empty($product['is_active'])));
+    $tiersByProduct = [];
+    foreach (Database::rows("SELECT product_id,quantity,price FROM product_quantity_tiers ORDER BY product_id,quantity") as $tier) {
+        $tiersByProduct[(int)$tier['product_id']][] = $tier;
+    }
+    foreach ($products as &$product) $product['quantity_tiers'] = $tiersByProduct[(int)$product['id']] ?? [];
+    unset($product);
+    $categories = array_values(array_filter(\Catalog\ProductCatalog::categories(), static fn(array $category): bool => !empty($category['is_active']) && (int)($category['product_count'] ?? 0) > 0));
+    view('admin/order-new', [
+        'customers' => Database::rows("SELECT id,name,email,phone FROM users ORDER BY name LIMIT 1000"),
+        'categories' => $categories,
+        'products' => $products,
+    ]);
+    exit;
+}
 
 if (preg_match('#^/admin/deals/edit/(\d+)$#', $uri, $m) && $method === 'GET') {
     view('admin/deals-new', ['dealEditId' => (int)$m[1]]);

@@ -100,6 +100,8 @@ foreach ($customOrders as $quote) {
         'items' => [[
             'product_name' => (string)($quote['product_name'] ?? 'Custom Product'),
             'quantity' => (int)($quote['quantity'] ?? 1),
+            'custom_quantity' => (string)($quote['quantity'] ?? ''),
+            'product_image' => (string)($quote['product_image'] ?? ''),
             'quality_name' => (string)($quote['material_type'] ?? 'Custom specification'),
             'custom_size_dimension' => (string)($quote['size_dimension'] ?? ''),
         ]],
@@ -169,6 +171,7 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
         $orderPublicId = (string)($order['order_id'] ?? $order['id'] ?? '');
         $isPaid = in_array((string)($order['payment_status'] ?? ''), ['paid'], true);
         $hasAdminUpdate = !empty($order['admin_update_pending']);
+        $requiresCustomerAction = $hasAdminUpdate && in_array((string)($order['admin_update_type'] ?? ''), ['admin_proof_uploaded','admin_issue_marked'], true);
         $adminUpdateLabel = match ((string)($order['admin_update_type'] ?? '')) {
             'admin_proof_uploaded' => 'Proof Ready — Your Approval Required',
             'admin_issue_marked' => 'Artwork Action Required',
@@ -194,7 +197,7 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
         $refundRequested = !empty($order['refund_requested_at']) || (string)($order['customer_update_type'] ?? '') === 'customer_refund_requested';
         $canRequestRefund = $status === 'cancelled' && $isPaid && !$refundRequested && !$isQuoteOnly;
       ?>
-        <details id="account-order-<?= $h(preg_replace('/[^A-Za-z0-9_-]+/', '-', $orderPublicId)) ?>" class="account-order-detail <?= $hasAdminUpdate ? 'has-admin-update' : '' ?>" data-order-detail="<?= $h($orderPublicId) ?>" data-order-db-id="<?= (int)($order['id'] ?? 0) ?>" data-admin-update-type="<?= $h($order['admin_update_type'] ?? '') ?>">
+        <details id="account-order-<?= $h(preg_replace('/[^A-Za-z0-9_-]+/', '-', $orderPublicId)) ?>" class="account-order-detail <?= $hasAdminUpdate ? 'has-admin-update' : '' ?> <?= $requiresCustomerAction ? 'requires-customer-action' : '' ?>" data-order-detail="<?= $h($orderPublicId) ?>" data-order-db-id="<?= (int)($order['id'] ?? 0) ?>" data-admin-update-type="<?= $h($order['admin_update_type'] ?? '') ?>">
           <summary class="account-order-row" role="row">
             <strong>#<?= $h($order['order_id'] ?? $order['id'] ?? '') ?></strong>
             <span><?= !empty($order['created_at']) ? date('d M, Y', strtotime((string)$order['created_at'])) : '—' ?></span>
@@ -236,7 +239,8 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
                           <strong><?= $h($item['product_name'] ?? 'Product') ?></strong>
                           <span data-design-status-label><?= $isQuoteOnly ? 'Quote Details' : $h($designApprovalLabels[$designStatus] ?? ucfirst(str_replace('_', ' ', $designStatus))) ?></span>
                         </div>
-                        <p><?= number_format((float)($item['quantity'] ?? 0)) ?> qty × <?= $h($item['quality_name'] ?? 'Standard') ?></p>
+                        <?php $displayQuantity=trim((string)($item['custom_quantity']??''))?:number_format((float)($item['quantity']??0));$quantityLabel=preg_match('/(?:qty|pcs|pieces|units?)$/i',$displayQuantity)?$displayQuantity:($displayQuantity.' qty');$displayQuality=trim((string)($item['custom_material_type']??''))?:trim((string)($item['quality_name']??'')); ?>
+                        <p><?= $h($quantityLabel) ?><?= $displayQuality!==''?' × '.$h($displayQuality):'' ?></p>
                         <?php if ($isQuoteOnly && !empty($item['custom_size_dimension'])): ?><small>Size / Dimension: <?= $h($item['custom_size_dimension']) ?></small><?php endif; ?>
                         <?php if ($isQuoteOnly && !empty($customRequest['quote_note'])): ?><small><?= nl2br($h($customRequest['quote_note'])) ?></small><?php endif; ?>
                         <?php if (!empty($item['design_admin_note'])): ?><small class="<?= $designStatus === 'issue_found' ? 'account-design-alert-note' : '' ?>"><?= $designStatus === 'issue_found' ? '⚠ Action required: ' : '' ?><?= $h($item['design_admin_note']) ?></small><?php endif; ?>

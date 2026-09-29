@@ -12,9 +12,9 @@ $adminPageClass = 'admin-page-' . preg_replace('/[^a-z0-9-]+/i', '-', (string)($
 $admin = \Auth\Auth::admin();
 $isSuperAdmin = \Auth\Auth::isSuperAdmin();
 $adminRoleLabel = $isSuperAdmin ? 'Super Admin' : 'Admin';
-$adminBrandLogo='/assets/images/rcs-graphic-logo.png';
-try{$adminBrandLogo=(string)(\Site\SiteChromeManager::settings()['header_logo']??$adminBrandLogo);}catch(\Throwable){}
-if($adminBrandLogo===''||(!str_starts_with($adminBrandLogo,'/')&&!preg_match('#^https?://#i',$adminBrandLogo)))$adminBrandLogo='/assets/images/rcs-graphic-logo.png';
+$adminBrandLogo='/assets/images/RCS PRINT LOGO-white.png';
+try{$adminBrandLogo=(string)(\Site\SiteChromeManager::settings()['footer_logo']??$adminBrandLogo);}catch(\Throwable){}
+if($adminBrandLogo===''||(!str_starts_with($adminBrandLogo,'/')&&!preg_match('#^https?://#i',$adminBrandLogo)))$adminBrandLogo='/assets/images/RCS PRINT LOGO-white.png';
 $adminNewOrderCount = 0;
 try { $adminNewOrderCount = (int)(Database::row("SELECT COUNT(*) AS c FROM orders WHERE status='new_order'")['c'] ?? 0); } catch (\Throwable) {}
 $adminNewCustomCount = 0;
@@ -80,7 +80,7 @@ window.adminPrompt=(message,value='',options={})=>window.adminDialog(message,{..
     <!-- Sidebar -->
     <div class="adm-sb" id="admSidebar">
       <div class="adm-sb-logo adm-sb-logo-img">
-        <img src="<?= htmlspecialchars($adminBrandLogo,ENT_QUOTES) ?>" alt="RCS Print Logo" loading="eager" decoding="async" onerror="this.onerror=null;this.src='/assets/images/rcs-graphic-logo.png'">
+        <img src="<?= htmlspecialchars($adminBrandLogo,ENT_QUOTES) ?>" alt="RCS Print Logo" loading="eager" decoding="async" onerror="this.onerror=null;this.src='/assets/images/RCS PRINT LOGO-white.png'">
         <div class="adm-sb-s">Admin Panel</div>
       </div>
       <div class="adm-nl">Main</div>

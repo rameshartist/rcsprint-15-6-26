@@ -457,10 +457,11 @@ class OrderManager
         if(!$user)return ['ok'=>false,'msg'=>'Customer account was not found.'];$userId=(int)$user['id'];
         $productId=(int)($data['product_id']??0);$quantity=max(1,(int)($data['quantity']??0));$designChoice=in_array(($data['design_choice']??''),['upload','rcs'],true)?(string)$data['design_choice']:'upload';
         $product=\Catalog\ProductCatalog::byId($productId);if(!$product||empty($product['is_active']))return ['ok'=>false,'msg'=>'Select an active product.'];
+        $categoryId=(int)($data['category_id']??0);if($categoryId<=0||(int)($product['category_id']??0)!==$categoryId)return ['ok'=>false,'msg'=>'The selected product does not belong to this category. Please select it again.'];
         $pricing=\Cart\Pricing::calculate($productId,1,$quantity,[],$designChoice);if(!($pricing['ok']??false))return $pricing;
         $item=['total_price'=>(float)$pricing['total']];$totals=\Cart\Cart::totals([$item]);$notes=trim((string)($data['notes']??''));$now=date('Y-m-d H:i:s');$db=\Database::get();
         try{$db->beginTransaction();$orderId=self::generateOrderId();$dbOrderId=\Database::insert("INSERT INTO orders(order_id,order_type,checkout_group_id,order_source,created_by_admin_id,user_id,customer_name,customer_email,customer_phone,subtotal,discount_amount,gst_amount,gst_percent,total_amount,payment_method,payment_status,status,notes,created_at) VALUES(?,'normal',?,'admin',?,?,?,?,?,?,?,?,?,?,?,'razorpay','pending','new_order',?,?)",[$orderId,'admin_'.bin2hex(random_bytes(10)),$adminId,$userId,$user['name'],$user['email'],$user['phone'],$totals['subtotal'],0,$totals['gst_amt'],$totals['gst_pct'],$totals['total'],$notes,$now]);
-            $orderItemId=\Database::insert("INSERT INTO order_items(order_id,item_type,product_id,quality_id,quantity,product_name,quality_name,attribute_selections,design_choice,design_brief,notes,price_breakdown,total_price,created_at) VALUES(?,'product',?,1,?,?,?,'[]',?,?,?, ?,?,?)",[$dbOrderId,$productId,$quantity,$product['name'],'Standard',$designChoice,trim((string)($data['design_brief']??'')),$notes,json_encode($pricing['breakdown'],JSON_UNESCAPED_UNICODE),$pricing['total'],$now]);
+            $orderItemId=\Database::insert("INSERT INTO order_items(order_id,item_type,product_id,quality_id,quantity,product_name,quality_name,attribute_selections,design_choice,design_brief,notes,price_breakdown,total_price,created_at) VALUES(?,'product',?,NULL,?,?,?,'[]',?,?,?,?,?,?)",[$dbOrderId,$productId,$quantity,$product['name'],'Standard',$designChoice,trim((string)($data['design_brief']??'')),$notes,json_encode($pricing['breakdown'],JSON_UNESCAPED_UNICODE),$pricing['total'],$now]);
             self::ensureDesignApprovalForItem($dbOrderId,$orderItemId,$designChoice,null);\Database::insert("INSERT INTO order_status_history(order_id,status,note,created_by,created_at) VALUES(?,'new_order','Order added by admin',?,?)",[$dbOrderId,'admin:'.$adminId,$now]);$db->commit();
             $order=self::getOrder($dbOrderId);try{\Sheets\SheetsSync::syncOrder($order);}catch(\Throwable){}
             return ['ok'=>true,'order'=>$order,'customer_created'=>$createdUser,'temporary_password'=>$createdUser?$temporaryPassword:null];
@@ -781,7 +782,9 @@ class OrderManager
         foreach ($orders as &$order) {
             $order['items'] = \Database::rows(
                 "SELECT oi.*,
-                        COALESCE(pi.image_path, pi.url) AS product_image,
+                        COALESCE(cqr.product_image, oi.custom_product_image, co.banner_image, pi.image_path, pi.url) AS product_image,
+                        cqr.quantity AS custom_quantity,
+                        cqr.material_type AS custom_material_type,
                         af.id AS artwork_file_id,
                         af.original_name AS artwork_original_name,
                         af.filename AS artwork_filename,
@@ -799,6 +802,8 @@ class OrderManager
                         pf.mime_type AS design_proof_mime_type
                  FROM order_items oi
                  LEFT JOIN product_images pi ON pi.product_id = oi.product_id AND pi.is_primary = 1
+                 LEFT JOIN custom_quote_requests cqr ON cqr.id = oi.custom_quote_id
+                 LEFT JOIN combo_offers co ON co.id = oi.combo_offer_id
                  LEFT JOIN order_design_approvals oda ON oda.order_item_id = oi.id
                  LEFT JOIN artwork_files af ON af.id = oda.customer_artwork_file_id
                  LEFT JOIN artwork_files pf ON pf.id = oda.proof_file_id
