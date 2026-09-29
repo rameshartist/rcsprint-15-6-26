@@ -1,6 +1,7 @@
 <?php
 $pageTitle = 'My Account — RCS Graphic';
 $currentPage = 'profile';
+$loadRazorpay = true;
 include INCLUDE_PATH . '/partials/head.php';
 include INCLUDE_PATH . '/partials/header.php';
 
@@ -182,6 +183,7 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
         $canPayCustom = $custom && $isQuoteOnly && !$isPaid
             && !empty($order['quote_token'])
             && in_array($status, ['customer_approved', 'payment_pending'], true);
+        $canPayAdminOrder = !$isQuoteOnly && !$isPaid && (string)($order['order_source'] ?? '') === 'admin' && !empty($order['id']);
         $trackSteps = ['received', 'design_approved', 'printing', 'other_process', 'ready', 'delivered'];
         $trackStatus = $status === 'processing' ? 'other_process' : $status;
         $trackIndex = array_search($trackStatus, $trackSteps, true);
@@ -308,6 +310,7 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
             <div class="account-order-actions-list" aria-label="Order actions">
               <strong>Actions</strong>
               <?php if ($canPayCustom): ?><a href="/custom-checkout/<?= rawurlencode((string)$order['quote_token']) ?>"><i class="fa-solid fa-lock" aria-hidden="true"></i> Pay Custom Order</a><?php endif; ?>
+              <?php if ($canPayAdminOrder): ?><button type="button" onclick="payAdminCreatedOrder(<?= (int)$order['id'] ?>,this)"><i class="fa-solid fa-lock" aria-hidden="true"></i> Pay Now</button><?php endif; ?>
               <?php if (!$isQuoteOnly): ?><button type="button" onclick="openAccountOrder(this)"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Track Order</button><?php endif; ?>
               <?php if ($isPaid && $orderPublicId !== '' && !empty($order['invoice_file_path'])): ?>
                 <a href="/invoice/<?= rawurlencode($orderPublicId) ?>" target="_blank" rel="noopener"><i class="fa-regular fa-file-lines" aria-hidden="true"></i> Download Invoice</a>
@@ -730,6 +733,7 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
 
 <script>
 const ACCOUNT_TABS = ['dashboard','orders','custom-orders','wishlist','designs','reviews','addresses','details','security'];
+async function payAdminCreatedOrder(orderId,button){if(typeof Razorpay==='undefined'){alert('Payment service is unavailable. Please retry.');return;}button.disabled=true;const original=button.innerHTML;button.textContent='Opening payment…';try{const create=await fetch(`/api/orders/${orderId}/payment/create`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin',body:'{}'}),session=await create.json();if(!create.ok||!session.ok)throw new Error(session.msg||'Could not start payment.');const gateway=new Razorpay({key:session.key_id,amount:session.amount,currency:session.currency,name:'RCS Graphic',description:'Pending order payment',order_id:session.razorpay_order_id,handler:async response=>{try{const verify=await fetch(`/api/orders/${orderId}/payment/verify`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin',body:JSON.stringify(response)}),result=await verify.json();if(!verify.ok||!result.ok)throw new Error(result.msg||'Payment verification failed.');rememberOpenAccountOrder(button);location.reload();}catch(error){alert(error.message||'Payment verification failed. Please contact support with your payment ID.');button.disabled=false;button.innerHTML=original;}},modal:{ondismiss:()=>{button.disabled=false;button.innerHTML=original;}}});gateway.on('payment.failed',event=>{alert(event.error?.description||'Payment failed.');button.disabled=false;button.innerHTML=original;});gateway.open();}catch(error){alert(error.message||'Could not start payment.');button.disabled=false;button.innerHTML=original;}}
 
 function setAccountTab(tab, pushHash = true) {
   const safeTab = ACCOUNT_TABS.includes(tab) ? tab : 'dashboard';
@@ -928,14 +932,8 @@ async function uploadAccountArtworkRevision(input, id) {
   const oldText = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
   try {
-    const resp = await fetch(`/api/design-approvals/${id}/artwork`, {
-      method: 'POST',
-      headers: { 'X-CSRF-TOKEN': APP.csrfToken },
-      credentials: 'same-origin',
-      body: fd,
-    });
-    const data = await resp.json();
-    if (!data.ok) {
+    const {ok,data} = await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST',`/api/design-approvals/${id}/artwork`);xhr.withCredentials=true;xhr.setRequestHeader('X-CSRF-TOKEN',APP.csrfToken);xhr.upload.onprogress=event=>{if(!event.lengthComputable)return;const percent=Math.round((event.loaded/event.total)*100);if(btn)btn.textContent=`Uploading ${percent}%`;const hint=form?.querySelector('small');if(hint)hint.textContent=`Secure upload in progress — ${percent}%`;};xhr.onerror=()=>reject(new Error('Network upload failed.'));xhr.onload=()=>{let payload={};try{payload=JSON.parse(xhr.responseText||'{}')}catch(e){}resolve({ok:xhr.status>=200&&xhr.status<300,data:payload});};xhr.send(fd);});
+    if (!ok || !data.ok) {
       const errorMsg = data.msg || 'Could not reupload design.';
       showDesignUploadError(input, errorMsg);
       alert(errorMsg);

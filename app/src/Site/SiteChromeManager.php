@@ -57,7 +57,7 @@ final class SiteChromeManager
     public static function navigation(): array
     {
         self::ensureSchema();
-        $result = ['header' => [], 'footer_quick' => [], 'footer_products' => [], 'footer_service' => []];
+        $result = ['header' => [], 'footer_quick' => [], 'footer_products' => [], 'footer_service' => [], 'social' => []];
         foreach (\Database::rows("SELECT id,location,label,url,sort_order,is_active FROM site_navigation_items ORDER BY location,sort_order,id") as $row) {
             if (isset($result[$row['location']])) $result[$row['location']][] = $row;
         }
@@ -81,7 +81,7 @@ final class SiteChromeManager
             }
             \Database::query("DELETE FROM site_navigation_items");
             foreach ((array)($data['navigation'] ?? []) as $location => $items) {
-                if (!in_array($location, ['header','footer_quick','footer_products','footer_service'], true)) continue;
+                if (!in_array($location, ['header','footer_quick','footer_products','footer_service','social'], true)) continue;
                 foreach ((array)$items as $i => $item) {
                     $label = trim((string)($item['label'] ?? '')); $url = self::validUrl((string)($item['url'] ?? ''));
                     if ($label === '' || $url === '') continue;

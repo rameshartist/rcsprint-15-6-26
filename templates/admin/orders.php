@@ -204,7 +204,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
         <span class="adm-order-card-id"><strong>#<?= htmlspecialchars($o['order_id']) ?></strong><small><?= htmlspecialchars(app_datetime((string)($o['created_at'] ?? ''), 'd M Y, H:i')) ?> · <?= htmlspecialchars($orderAge) ?></small></span>
         <span class="adm-order-card-customer"><strong><?= htmlspecialchars($o['customer_name']) ?></strong><small><?= htmlspecialchars($o['customer_phone']) ?><?= !empty($o['customer_email']) ? ' · ' . htmlspecialchars($o['customer_email']) : '' ?></small></span>
         <span class="adm-order-card-meta"><b>₹<?= number_format((float)$o['total_amount']) ?></b><small><?= count($o['items'] ?? []) ?> item(s)</small></span>
-        <span class="adm-order-card-badges"><?php if (($o['order_type'] ?? 'normal') === 'custom'): ?><span class="badge b-purple">Custom Order</span><?php endif; ?><span class="badge <?= $statusColors[$orderStatus] ?? 'b-blue' ?>" data-order-status-badge><?= htmlspecialchars($statusLabels[$orderStatus] ?? $orderStatus) ?></span><span class="badge <?= $o['payment_status'] === 'paid' ? 'b-green' : 'b-amber' ?>"><?= ucfirst($o['payment_status']) ?></span><?php if ($hasCustomerUpdate): ?><span class="badge b-red adm-order-customer-update-badge"><?= htmlspecialchars($customerUpdateLabel) ?></span><?php elseif ($hasDesignAttention): ?><span class="badge b-red adm-order-customer-update-badge">Design Pending</span><?php endif; ?></span>
+        <span class="adm-order-card-badges"><?php if (($o['order_type'] ?? 'normal') === 'custom'): ?><span class="badge b-purple">Custom Order</span><?php endif; ?><?php if (($o['order_source'] ?? 'customer') === 'admin'): ?><span class="badge b-purple">Order Added by Admin</span><?php endif; ?><span class="badge <?= $statusColors[$orderStatus] ?? 'b-blue' ?>" data-order-status-badge><?= htmlspecialchars($statusLabels[$orderStatus] ?? $orderStatus) ?></span><span class="badge <?= $o['payment_status'] === 'paid' ? 'b-green' : 'b-amber' ?>"><?= $o['payment_status']==='paid'?'Paid':'Pending Payment' ?></span><?php if ($hasCustomerUpdate): ?><span class="badge b-red adm-order-customer-update-badge"><?= htmlspecialchars($customerUpdateLabel) ?></span><?php elseif ($hasDesignAttention): ?><span class="badge b-red adm-order-customer-update-badge">Design Pending</span><?php endif; ?></span>
       </button>
       <div class="adm-order-card-quick" aria-label="Quick order actions">
         <select class="fi fi-sel" id="ord_status_<?= (int)$o['id'] ?>" aria-label="Update status for order <?= htmlspecialchars($o['order_id']) ?>"><?php foreach (['new_order','received','design_approved','printing','other_process','ready','delivered','cancelled'] as $s): ?><option value="<?= $s ?>" <?= $orderStatus === $s ? 'selected' : '' ?>><?= $statusLabels[$s] ?? ucfirst($s) ?></option><?php endforeach; ?></select>
@@ -247,7 +247,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
               $customNote = trim((string)($item['custom_quote_note'] ?: $item['notes'] ?: $item['design_brief'] ?: ''));
             ?>
             <div class="ord-custom-detail-row" data-custom-order-item>
-              <div class="ord-custom-id"><span>Custom Order ID</span><?php if ($customQuoteId): ?><a class="ord-custom-id-link" href="/admin/custom-orders#quote-<?= $customQuoteId ?>"><?= htmlspecialchars((string)($item['custom_quote_code'] ?? ('CQ-' . str_pad((string)$customQuoteId, 4, '0', STR_PAD_LEFT)))) ?></a><?php else: ?><strong>Not linked</strong><?php endif; ?></div>
+              <div class="ord-custom-id"><span>Quote ID</span><?php if ($customQuoteId): ?><a class="ord-custom-id-link btn btn-green btn-sm" href="/admin/custom-orders#quote-<?= $customQuoteId ?>"><?= htmlspecialchars((string)($item['custom_quote_code'] ?? ('CQ-' . str_pad((string)$customQuoteId, 4, '0', STR_PAD_LEFT)))) ?></a><?php else: ?><strong>Not linked</strong><?php endif; ?></div>
               <div><span>Product Name</span><strong><?= htmlspecialchars($customName) ?></strong></div>
               <div><span>Size / Dimensions</span><strong><?= htmlspecialchars($customSize ?: 'Not set') ?></strong></div>
               <div><span>Material</span><strong><?= htmlspecialchars($customMaterial ?: 'Not set') ?></strong></div>
@@ -269,7 +269,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
                   </span>
                   <div><div class="ord-item-name"><?= htmlspecialchars($workflowName) ?> <span class="ord-design-inline-choice"><?= $isRcsDesign ? 'RCS Design' : 'Customer Upload' ?></span></div><div class="ord-meta"><?= htmlspecialchars((string)$workflowQuantity) ?> qty<?= $isCustomItem?'':', '.htmlspecialchars((string)$item['quality_name']) ?> · <?= $isRcsDesign ? 'RCS will prepare proof' : 'Customer artwork approval required' ?></div></div>
                 </div>
-                <div class="ord-design-badges"><span class="badge <?= $isRcsDesign ? 'b-purple' : 'b-blue' ?>"><?= $isRcsDesign ? '🎨 RCS Design' : '📁 Customer Upload' ?></span><span class="badge <?= $designApprovalColors[$approvalStatus] ?? 'b-amber' ?>"><?= htmlspecialchars($designApprovalLabels[$approvalStatus] ?? $approvalStatus) ?></span></div>
+                <div class="ord-design-badges"><span class="badge <?= $isRcsDesign ? 'b-purple' : 'b-blue' ?>"><?= $isRcsDesign ? '🎨 RCS Design' : '📁 Customer Upload' ?></span><span class="badge <?= $designApprovalColors[$approvalStatus] ?? 'b-amber' ?>"><?= htmlspecialchars($designApprovalLabels[$approvalStatus] ?? $approvalStatus) ?></span><?php if ($approvalStatus==='revision_requested'&&!empty($item['design_customer_note'])): ?><span class="ord-revision-inline"><b>Revision Requested:</b> <?= htmlspecialchars((string)$item['design_customer_note']) ?></span><?php endif; ?></div>
               </div>
               <div class="ord-design-strip">
                 <div class="ord-design-filebox">
@@ -313,12 +313,6 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
                 <?php endif; ?>
               </div>
               <?php if (!empty($item['design_admin_note'])): ?><div class="ord-design-note <?= $approvalStatus === 'issue_found' ? 'ord-design-note--issue' : '' ?>"><?= $approvalStatus === 'issue_found' ? '⚠ Issue for customer: ' : 'Note: ' ?><?= htmlspecialchars($item['design_admin_note']) ?></div><?php endif; ?>
-              <?php if (!empty($item['design_customer_note'])): ?>
-                <?php $noteMeta = $designCustomerNoteMeta($approvalStatus); ?>
-                <div class="ord-design-note ord-design-note--customer ord-design-note--<?= htmlspecialchars($noteMeta['tone']) ?>">
-                  <strong><?= htmlspecialchars($noteMeta['label']) ?></strong><span>Customer Revision Details:</span><p><?= nl2br(htmlspecialchars((string)$item['design_customer_note'])) ?></p>
-                </div>
-              <?php endif; ?>
             </div>
           <?php endforeach; ?>
         </section>
@@ -339,6 +333,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
               if (count($o['items'] ?? []) > 4) $orderConfirmProductLines[] = '• +' . (count($o['items'] ?? []) - 4) . ' more item(s)';
               $orderConfirmProducts = implode("\n", $orderConfirmProductLines);
             ?>
+            <?php if (($o['order_source'] ?? 'customer') === 'admin' && ($o['payment_status'] ?? '') !== 'paid'): $adminPayPhone=preg_replace('/\D+/','',(string)($o['customer_phone']??''));$adminPayMessage='Hello '.(string)($o['customer_name']??'Customer').', your order #'.(string)($o['order_id']??'').' has been added by RCS Graphic. Please login at '.$publicBase.'/login and open My Orders to complete the pending payment.'; ?><a class="aoc-btn aoc-btn--approve-wa" target="_blank" rel="noopener" href="https://wa.me/<?= htmlspecialchars($adminPayPhone) ?>?text=<?= rawurlencode($adminPayMessage) ?>"><span class="aoc-ico"><?= $adminWhatsAppIcon ?></span><span>Send Payment Link</span></a><?php endif; ?>
             <button class="aoc-btn aoc-btn--confirm" type="button" onclick='waOrderConfirmation(<?= json_encode((string)($o['customer_name'] ?? 'Customer'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode((string)($o['customer_phone'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($orderConfirmId, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($orderConfirmTotal, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($orderConfirmProducts, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($orderConfirmProfileUrl, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)'><span class="aoc-ico"><?= $adminWhatsAppIcon ?></span><span>Order Confirmation</span></button>
             <a href="tel:<?= htmlspecialchars(preg_replace('/\D+/', '', $o['customer_phone'] ?? '')) ?>" class="aoc-btn aoc-btn--call"><span class="aoc-ico">📞</span><span>Call</span></a>
             <button class="aoc-btn aoc-btn--wa" type="button" onclick="waCustomer('<?= htmlspecialchars(addslashes($o['customer_name'])) ?>','<?= htmlspecialchars($o['customer_phone']) ?>','<?= htmlspecialchars($o['order_id']) ?>','<?= htmlspecialchars($orderStatus) ?>')"><span class="aoc-ico">💬</span><span>WhatsApp</span></button>
@@ -514,14 +509,11 @@ async function uploadDesignProof(id) {
   const fd = new FormData();
   fd.append('proof', input.files[0]);
   fd.append('admin_note', note);
-  const resp = await fetch(`/admin/api/design-approvals/${id}/proof`, {
-    method: 'POST',
-    headers: {'X-CSRF-TOKEN':'<?= htmlspecialchars($csrf ?? '') ?>'},
-    body: fd
-  });
-  const data = await resp.json();
-  if (data.ok) { toast('Proof uploaded', 'success'); setTimeout(() => location.reload(), 500); }
+  const trigger=input.closest('.ord-design-actions')?.querySelector('button');const oldText=trigger?.textContent||'Upload Proof';if(trigger){trigger.disabled=true;trigger.textContent='Uploading 0%';}
+  const {ok,data}=await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST',`/admin/api/design-approvals/${id}/proof`);xhr.setRequestHeader('X-CSRF-TOKEN','<?= htmlspecialchars($csrf ?? '') ?>');xhr.upload.onprogress=event=>{if(event.lengthComputable&&trigger)trigger.textContent=`Uploading ${Math.round(event.loaded/event.total*100)}%`;};xhr.onerror=()=>reject(new Error('Network upload failed'));xhr.onload=()=>{let payload={};try{payload=JSON.parse(xhr.responseText||'{}')}catch(e){}resolve({ok:xhr.status>=200&&xhr.status<300,data:payload});};xhr.send(fd);}).catch(error=>({ok:false,data:{msg:error.message}}));
+  if (ok&&data.ok) { toast('Proof uploaded', 'success'); rememberCardForControl(input); setTimeout(() => location.reload(), 350); }
   else toast(data.msg || 'Proof upload failed', 'error');
+  if(trigger){trigger.disabled=false;trigger.textContent=oldText;}
 }
 document.addEventListener('DOMContentLoaded', restoreOpenOrderCards);
 

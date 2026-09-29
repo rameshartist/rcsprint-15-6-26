@@ -13,16 +13,16 @@ $dashboardFirstName = preg_split('/\s+/', $dashboardAdminName)[0] ?? $dashboardA
       <p>Here’s what’s happening with your printing business today.</p>
     </div>
     <div class="dash-ref-title-actions">
-      <span class="dash-ref-date" aria-label="Current reporting period">▣ <b><?= htmlspecialchars(date('01 M Y')) ?> – <?= htmlspecialchars(date('t M Y')) ?></b></span>
-      <a class="dash-ref-add" href="/admin/orders?status=new_order">＋ Add Order</a>
+      <form class="dash-date-form" action="/admin/reports/revenue" method="get"><input type="hidden" name="mode" value="range"><label>From<input type="date" name="start" value="<?= htmlspecialchars(date('Y-m-01')) ?>" required></label><span>→</span><label>To<input type="date" name="end" value="<?= htmlspecialchars(date('Y-m-t')) ?>" required></label><button type="submit">View Report</button></form>
+      <a class="dash-ref-add" href="/admin/orders/new">＋ Add Order</a>
     </div>
   </header>
 
   <section class="dash-ref-kpis dash-ref-kpis-top" aria-label="Primary dashboard metrics">
     <a class="dash-ref-kpi kpi-purple" href="/admin/orders"><span class="dash-ref-kpi-icon"><svg viewBox="0 0 24 24"><path d="M7 9V7a5 5 0 0 1 10 0v2h2l1 12H4L5 9h2Zm2 0h6V7a3 3 0 0 0-6 0v2Z"/></svg></span><div><b id="ds-total-orders">—</b><strong>Total Orders</strong><small id="tr-total-orders">All recorded orders</small></div><i>▥</i></a>
-    <a class="dash-ref-kpi kpi-green" href="/admin/orders"><span class="dash-ref-kpi-icon">₹</span><div><b id="ds-today-rev">—</b><strong>Today’s Revenue</strong><small id="tr-today-rev">Loading trend…</small></div><i>▥</i></a>
-    <a class="dash-ref-kpi kpi-blue" href="/admin/orders"><span class="dash-ref-kpi-icon"><svg viewBox="0 0 24 24"><path d="m21 8-9-5-9 5 9 5 9-5Zm-16 3.5V16l7 4 7-4v-4.5l-7 4-7-4Z"/></svg></span><div><b id="ds-month-rev">—</b><strong>This Month Revenue</strong><small id="tr-month-rev">Loading trend…</small></div><i>▥</i></a>
-    <a class="dash-ref-kpi kpi-orange" href="/admin/orders"><span class="dash-ref-kpi-icon"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6V2Zm8 2v4h4l-4-4ZM9 13h8v-2H9v2Zm0 4h8v-2H9v2Z"/></svg></span><div><b id="ds-rev">—</b><strong>Total Revenue</strong><small class="pos">Paid orders</small></div><i>▥</i></a>
+    <a class="dash-ref-kpi kpi-green" href="/admin/reports/revenue?mode=today"><span class="dash-ref-kpi-icon">₹</span><div><b id="ds-today-rev">—</b><strong>Today’s Revenue</strong><small id="tr-today-rev">Loading trend…</small></div><i>→</i></a>
+    <a class="dash-ref-kpi kpi-blue" href="/admin/reports/revenue?mode=month"><span class="dash-ref-kpi-icon"><svg viewBox="0 0 24 24"><path d="m21 8-9-5-9 5 9 5 9-5Zm-16 3.5V16l7 4 7-4v-4.5l-7 4-7-4Z"/></svg></span><div><b id="ds-month-rev">—</b><strong>This Month Revenue</strong><small id="tr-month-rev">Loading trend…</small></div><i>→</i></a>
+    <a class="dash-ref-kpi kpi-orange" href="/admin/reports/revenue?mode=all"><span class="dash-ref-kpi-icon"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6V2Zm8 2v4h4l-4-4ZM9 13h8v-2H9v2Zm0 4h8v-2H9v2Z"/></svg></span><div><b id="ds-rev">—</b><strong>Total Revenue</strong><small class="pos">Paid orders</small></div><i>→</i></a>
     <a class="dash-ref-kpi kpi-pink" href="/admin/customers"><span class="dash-ref-kpi-icon"><svg viewBox="0 0 24 24"><path d="M16 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8 1c-3 0-6 1.5-6 4v3h12v-3c0-2.5-3-4-6-4ZM8 14c-3.3 0-6 1.5-6 4v2h6v-3c0-1.1.4-2.1 1.1-2.9L8 14Z"/></svg></span><div><b id="ds-customers">—</b><strong>Total Customers</strong><small id="tr-customers">Loading trend…</small></div><i>▥</i></a>
   </section>
 

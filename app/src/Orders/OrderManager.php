@@ -23,7 +23,10 @@ class OrderManager
                 "ALTER TABLE orders ADD COLUMN order_type VARCHAR(30) NOT NULL DEFAULT 'normal' AFTER order_id",
                 "ALTER TABLE orders ADD COLUMN custom_quote_id INT UNSIGNED NULL AFTER order_type",
                 "ALTER TABLE orders ADD COLUMN checkout_group_id VARCHAR(80) NULL AFTER custom_quote_id",
+                "ALTER TABLE orders ADD COLUMN order_source VARCHAR(30) NOT NULL DEFAULT 'customer' AFTER checkout_group_id",
+                "ALTER TABLE orders ADD COLUMN created_by_admin_id INT UNSIGNED NULL AFTER order_source",
                 "CREATE INDEX idx_orders_checkout_group ON orders (checkout_group_id)",
+                "CREATE INDEX idx_orders_source ON orders (order_source, created_at)",
                 "CREATE INDEX idx_orders_order_type ON orders (order_type)",
                 "CREATE INDEX idx_orders_custom_quote ON orders (custom_quote_id)",
                 "ALTER TABLE order_items MODIFY COLUMN product_id INT UNSIGNED NULL",
@@ -438,6 +441,30 @@ class OrderManager
         self::saveUserShippingDefault((int)$user['id'],$shipping,$saveShippingDefault);
         $primary=$orders[0]??['id'=>(int)($created[0]['id']??0),'order_id'=>(string)($created[0]['order_id']??''),'items'=>[]];
         return ['ok'=>true,'order'=>$primary,'orders'=>$orders,'order_id'=>$primary['order_id'],'checkout_group_id'=>$checkoutGroup];
+    }
+
+    public static function createByAdmin(array $data, int $adminId): array
+    {
+        self::ensureCustomOrderSchema(); self::ensureDesignApprovalSchema(); self::ensureWorkflowSchema();
+        $userId=(int)($data['user_id']??0);$createdUser=false;$temporaryPassword=null;
+        $name=trim((string)($data['customer_name']??''));$email=strtolower(trim((string)($data['customer_email']??'')));$phone=trim((string)($data['customer_phone']??''));
+        if($userId>0)$user=\Database::row("SELECT * FROM users WHERE id=?",[$userId]);
+        else{
+            if($name===''||!filter_var($email,FILTER_VALIDATE_EMAIL)||strlen(preg_replace('/\D+/','',$phone))<7)return ['ok'=>false,'msg'=>'Valid customer name, email and mobile number are required.'];
+            $user=\Database::row("SELECT * FROM users WHERE email=? OR phone=? LIMIT 1",[$email,$phone]);
+            if(!$user){$temporaryPassword=preg_replace('/\D+/','',$phone);$userId=\Database::insert("INSERT INTO users(name,email,phone,company,password,marketing_consent,created_at) VALUES(?,?,?,'',?,0,NOW())",[$name,$email,$phone,password_hash($temporaryPassword,PASSWORD_BCRYPT,['cost'=>10])]);$user=\Database::row("SELECT * FROM users WHERE id=?",[$userId]);$createdUser=true;}
+        }
+        if(!$user)return ['ok'=>false,'msg'=>'Customer account was not found.'];$userId=(int)$user['id'];
+        $productId=(int)($data['product_id']??0);$quantity=max(1,(int)($data['quantity']??0));$designChoice=in_array(($data['design_choice']??''),['upload','rcs'],true)?(string)$data['design_choice']:'upload';
+        $product=\Catalog\ProductCatalog::byId($productId);if(!$product||empty($product['is_active']))return ['ok'=>false,'msg'=>'Select an active product.'];
+        $pricing=\Cart\Pricing::calculate($productId,1,$quantity,[],$designChoice);if(!($pricing['ok']??false))return $pricing;
+        $item=['total_price'=>(float)$pricing['total']];$totals=\Cart\Cart::totals([$item]);$notes=trim((string)($data['notes']??''));$now=date('Y-m-d H:i:s');$db=\Database::get();
+        try{$db->beginTransaction();$orderId=self::generateOrderId();$dbOrderId=\Database::insert("INSERT INTO orders(order_id,order_type,checkout_group_id,order_source,created_by_admin_id,user_id,customer_name,customer_email,customer_phone,subtotal,discount_amount,gst_amount,gst_percent,total_amount,payment_method,payment_status,status,notes,created_at) VALUES(?,'normal',?,'admin',?,?,?,?,?,?,?,?,?,?,?,'razorpay','pending','new_order',?,?)",[$orderId,'admin_'.bin2hex(random_bytes(10)),$adminId,$userId,$user['name'],$user['email'],$user['phone'],$totals['subtotal'],0,$totals['gst_amt'],$totals['gst_pct'],$totals['total'],$notes,$now]);
+            $orderItemId=\Database::insert("INSERT INTO order_items(order_id,item_type,product_id,quality_id,quantity,product_name,quality_name,attribute_selections,design_choice,design_brief,notes,price_breakdown,total_price,created_at) VALUES(?,'product',?,1,?,?,?,'[]',?,?,?, ?,?,?)",[$dbOrderId,$productId,$quantity,$product['name'],'Standard',$designChoice,trim((string)($data['design_brief']??'')),$notes,json_encode($pricing['breakdown'],JSON_UNESCAPED_UNICODE),$pricing['total'],$now]);
+            self::ensureDesignApprovalForItem($dbOrderId,$orderItemId,$designChoice,null);\Database::insert("INSERT INTO order_status_history(order_id,status,note,created_by,created_at) VALUES(?,'new_order','Order added by admin',?,?)",[$dbOrderId,'admin:'.$adminId,$now]);$db->commit();
+            $order=self::getOrder($dbOrderId);try{\Sheets\SheetsSync::syncOrder($order);}catch(\Throwable){}
+            return ['ok'=>true,'order'=>$order,'customer_created'=>$createdUser,'temporary_password'=>$createdUser?$temporaryPassword:null];
+        }catch(\Throwable $e){if($db->inTransaction())$db->rollBack();error_log('Admin order creation failed: '.$e->getMessage());return ['ok'=>false,'msg'=>'Order could not be created. Please verify the selected pricing tier.'];}
     }
 
     public static function updateStatus(int $orderId, string $status, string $note = '', string $actor = 'admin'): bool

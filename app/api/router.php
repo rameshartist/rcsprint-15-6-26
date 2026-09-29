@@ -136,6 +136,7 @@ if (preg_match('#^/api/design-approvals/(\d+)/artwork$#', $uri, $m) && $method =
     if (empty($_FILES['artwork'])) json(['ok' => false, 'msg' => 'No file uploaded'], 400);
 
     $file = $_FILES['artwork'];
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) json(['ok'=>false,'msg'=>'The upload did not complete. Please retry.'],400);
     $maxMb = (int)Database::setting('upload_max_mb', env('UPLOAD_MAX_SIZE_MB', '50'));
     $maxSize = $maxMb * 1024 * 1024;
     $allowed = array_map('trim', explode(',', Database::setting('upload_allowed_ext', 'pdf,ai,eps,png,jpg,jpeg,psd,cdr')));
@@ -491,6 +492,7 @@ if ($uri === '/api/upload/artwork' && $method === 'POST') {
     }
 
     $file    = $_FILES['artwork'];
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) json(['ok'=>false,'msg'=>'The upload did not complete. Please retry.'],400);
     $maxMb   = (int)Database::setting('upload_max_mb', env('UPLOAD_MAX_SIZE_MB', '50'));
     $maxSize = $maxMb * 1024 * 1024;
     $allowed = explode(',', Database::setting('upload_allowed_ext', 'pdf,ai,eps,png,jpg,jpeg,psd,cdr'));
@@ -580,6 +582,18 @@ if ($uri === '/api/orders' && $method === 'GET') {
 }
 
 // ── Razorpay ──────────────────────────────────────────────────
+
+if (preg_match('#^/api/orders/(\d+)/payment/create$#',$uri,$m) && $method==='POST') {
+    \Auth\Auth::require();\Auth\Auth::verifyCsrf();$user=\Auth\Auth::user();$order=Database::row("SELECT * FROM orders WHERE id=? AND user_id=? LIMIT 1",[(int)$m[1],(int)$user['id']]);
+    if(!$order)json(['ok'=>false,'msg'=>'Order not found.'],404);if(($order['payment_status']??'')==='paid')json(['ok'=>false,'msg'=>'This order is already paid.'],409);
+    $result=\Payment\Razorpay::createOrder((float)$order['total_amount'],'order_'.$order['order_id'],['internal_order_id'=>(string)$order['id'],'customer_name'=>$order['customer_name']]);
+    if($result['ok']??false)Database::query("UPDATE orders SET razorpay_order_id=?,updated_at=NOW() WHERE id=?",[$result['razorpay_order_id'],(int)$order['id']]);json($result,($result['ok']??false)?200:422);
+}
+if (preg_match('#^/api/orders/(\d+)/payment/verify$#',$uri,$m) && $method==='POST') {
+    \Auth\Auth::require();\Auth\Auth::verifyCsrf();$user=\Auth\Auth::user();$order=Database::row("SELECT * FROM orders WHERE id=? AND user_id=? LIMIT 1",[(int)$m[1],(int)$user['id']]);if(!$order)json(['ok'=>false,'msg'=>'Order not found.'],404);
+    $razorOrder=trim((string)($body['razorpay_order_id']??''));if($razorOrder===''||!hash_equals((string)($order['razorpay_order_id']??''),$razorOrder))json(['ok'=>false,'msg'=>'Payment session does not match this order.'],422);
+    $result=\Payment\Razorpay::handleSuccess((int)$order['id'],$razorOrder,trim((string)($body['razorpay_payment_id']??'')),trim((string)($body['razorpay_signature']??'')));json($result,($result['ok']??false)?200:422);
+}
 
 if ($uri === '/api/payment/create-order' && $method === 'POST') {
     $ensure = \Auth\Auth::ensureCheckoutUser($body['customer'] ?? []);

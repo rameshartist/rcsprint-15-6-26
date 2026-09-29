@@ -28,6 +28,35 @@ if ($uri === '/admin/logout') {
 }
 
 \Auth\Auth::requireAdmin();
+
+if ($uri === '/admin/reports/revenue' && $method === 'GET') {
+    \Orders\OrderManager::ensureCustomOrderSchema();
+    $mode = in_array((string)($_GET['mode'] ?? ''), ['today','month','all','range'], true) ? (string)$_GET['mode'] : 'range';
+    $today = new DateTimeImmutable('today', new DateTimeZone(APP_TIMEZONE));
+    $startInput = trim((string)($_GET['start'] ?? ''));
+    $endInput = trim((string)($_GET['end'] ?? ''));
+    try {
+        if ($mode === 'today') { $start=$today; $end=$today; }
+        elseif ($mode === 'month') { $start=$today->modify('first day of this month'); $end=$today->modify('last day of this month'); }
+        elseif ($mode === 'all') { $start=null; $end=$today; }
+        else {
+            $start=DateTimeImmutable::createFromFormat('!Y-m-d',$startInput,new DateTimeZone(APP_TIMEZONE)) ?: $today->modify('first day of this month');
+            $end=DateTimeImmutable::createFromFormat('!Y-m-d',$endInput,new DateTimeZone(APP_TIMEZONE)) ?: $today;
+            if($end<$start)throw new RuntimeException('End date must be on or after start date.');
+            if($start->diff($end)->days>730)throw new RuntimeException('Choose a range of two years or less.');
+        }
+        $where=[];$params=[];
+        if($start){$where[]='o.created_at >= ?';$params[]=$start->format('Y-m-d 00:00:00');}
+        $where[]='o.created_at < ?';$params[]=$end->modify('+1 day')->format('Y-m-d 00:00:00');
+        $whereSql='WHERE '.implode(' AND ',$where);
+        $summary=Database::row("SELECT COUNT(*) total_orders,SUM(payment_status='paid') paid_orders,SUM(payment_status<>'paid' OR payment_status IS NULL) pending_orders,COALESCE(SUM(CASE WHEN payment_status='paid' THEN total_amount ELSE 0 END),0) revenue,COALESCE(AVG(CASE WHEN payment_status='paid' THEN total_amount END),0) avg_order_value,SUM(order_type='custom') custom_orders FROM orders o {$whereSql}",$params);
+        $orders=Database::rows("SELECT o.id,o.order_id,o.order_type,o.order_source,o.customer_name,o.customer_email,o.customer_phone,o.total_amount,o.payment_status,o.status,o.created_at,COUNT(oi.id) item_count,SUBSTRING_INDEX(GROUP_CONCAT(oi.product_name ORDER BY oi.id SEPARATOR ', '),',',1) product_summary FROM orders o LEFT JOIN order_items oi ON oi.order_id=o.id {$whereSql} GROUP BY o.id ORDER BY o.created_at DESC LIMIT 250",$params);
+        $daily=Database::rows("SELECT DATE(o.created_at) report_date,COUNT(*) orders,COALESCE(SUM(CASE WHEN o.payment_status='paid' THEN o.total_amount ELSE 0 END),0) revenue FROM orders o {$whereSql} GROUP BY DATE(o.created_at) ORDER BY report_date",$params);
+        $statuses=Database::rows("SELECT o.status,COUNT(*) count FROM orders o {$whereSql} GROUP BY o.status ORDER BY count DESC",$params);
+        view('admin/revenue-report',compact('mode','start','end','summary','orders','daily','statuses'));
+    } catch (Throwable $e) { view('admin/revenue-report',['mode'=>$mode,'start'=>null,'end'=>$today,'summary'=>[],'orders'=>[],'daily'=>[],'statuses'=>[],'reportError'=>$e->getMessage()]); }
+    exit;
+}
 $orderSeenColumnReady = null;
 $orderSeenColumnAvailable = static function () use (&$orderSeenColumnReady): bool {
     if ($orderSeenColumnReady !== null) return $orderSeenColumnReady;
@@ -2755,6 +2784,7 @@ if (str_starts_with($uri, '/admin/api/')) {
         if (empty($_FILES['proof'])) json(['ok' => false, 'msg' => 'No proof file uploaded'], 400);
 
         $file = $_FILES['proof'];
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) json(['ok'=>false,'msg'=>'The proof upload did not complete. Please retry.'],400);
         $maxMb = (int)Database::setting('upload_max_mb', env('UPLOAD_MAX_SIZE_MB', '50'));
         if ($file['size'] > ($maxMb * 1024 * 1024)) json(['ok' => false, 'msg' => "File too large. Max {$maxMb}MB."], 400);
         $allowed = explode(',', Database::setting('upload_allowed_ext', 'pdf,ai,eps,png,jpg,jpeg,psd,cdr,svg,tif,tiff,zip'));
@@ -2784,6 +2814,13 @@ if (str_starts_with($uri, '/admin/api/')) {
         $failed = Database::rows("SELECT * FROM sheets_sync_log WHERE resolved=0 LIMIT 20");
         foreach ($failed as $row) Database::query("UPDATE sheets_sync_log SET resolved=1 WHERE id=?",[$row['id']]);
         json(['ok'=>true,'retried'=>count($failed)]);
+    }
+    if ($uri === '/admin/api/orders/create' && $method === 'POST') {
+        \Auth\Auth::verifyCsrf();
+        $admin=\Auth\Auth::admin();
+        $result=\Orders\OrderManager::createByAdmin($body,(int)($admin['id']??0));
+        if($result['ok']??false)\Orders\AdminAudit::log('admin_order_created','Admin created order '.($result['order']['order_id']??''));
+        json($result,($result['ok']??false)?200:422);
     }
 
     json(['ok'=>false,'msg'=>'Admin API not found'],404);
@@ -2923,6 +2960,7 @@ if (str_contains($uri, '/admin/settings') || str_contains($uri, '/admin/integrat
 }
 
 if ($uri === '/admin/orders') {
+    \Orders\OrderManager::ensureCustomOrderSchema();
     \Orders\OrderManager::ensureInvoiceSchema();
     $search = trim((string)($_GET['search'] ?? ''));
     $status = trim((string)($_GET['status'] ?? 'all'));
@@ -3212,6 +3250,7 @@ if (preg_match('#^/admin/portfolio/edit/(\d+)$#', $uri, $m) && $method === 'GET'
 
 if ($uri === '/admin/combo-offers/new' && $method === 'GET') { view('admin/combo-offers-form', ['comboEditId'=>0]); exit; }
 if (preg_match('#^/admin/combo-offers/edit/(\d+)$#', $uri, $m) && $method === 'GET') { view('admin/combo-offers-form', ['comboEditId'=>(int)$m[1]]); exit; }
+if ($uri === '/admin/orders/new' && $method === 'GET') { $products=\Catalog\ProductCatalog::all(true);$tiersByProduct=[];foreach(Database::rows("SELECT product_id,quantity,price FROM product_quantity_tiers ORDER BY product_id,quantity") as $tier)$tiersByProduct[(int)$tier['product_id']][]=$tier;foreach($products as &$product)$product['quantity_tiers']=$tiersByProduct[(int)$product['id']]??[];unset($product);view('admin/order-new',['customers'=>Database::rows("SELECT id,name,email,phone FROM users ORDER BY name LIMIT 1000"),'products'=>$products]); exit; }
 
 if (preg_match('#^/admin/deals/edit/(\d+)$#', $uri, $m) && $method === 'GET') {
     view('admin/deals-new', ['dealEditId' => (int)$m[1]]);

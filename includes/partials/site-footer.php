@@ -123,9 +123,13 @@ $sfCategoryHref = static function (string $label, array $aliases = [], string $f
       </div>
     </div>
 
-    <?php $socials=['facebook'=>'Facebook','instagram'=>'Instagram','linkedin'=>'LinkedIn','youtube'=>'YouTube']; ?>
+    <?php
+      $socialIconMap=['facebook'=>'fa-brands fa-facebook-f','instagram'=>'fa-brands fa-instagram','linkedin'=>'fa-brands fa-linkedin-in','youtube'=>'fa-brands fa-youtube','whatsapp'=>'fa-brands fa-whatsapp','x'=>'fa-brands fa-x-twitter','twitter'=>'fa-brands fa-x-twitter'];
+      $socialItems=$sfChromeNav['social']??[];
+      if(!$socialItems){foreach(['facebook','instagram','linkedin','youtube'] as $legacy){$url=trim((string)($sfChromeSettings['social_'.$legacy]??''));if($url!=='')$socialItems[]=['label'=>$legacy,'url'=>$url,'is_active'=>1];}}
+    ?>
     <nav class="footer-social-links" aria-label="Social media">
-      <?php foreach($socials as $key=>$label): $socialUrl=trim((string)($sfChromeSettings['social_'.$key]??'')); if($socialUrl==='')continue; ?><a href="<?= htmlspecialchars($socialUrl,ENT_QUOTES) ?>" target="_blank" rel="noopener noreferrer"><?= htmlspecialchars($label) ?></a><?php endforeach; ?>
+      <?php foreach($socialItems as $social): if(!(int)($social['is_active']??1))continue;$label=trim((string)($social['label']??'Social'));$key=strtolower(preg_replace('/[^a-z]/','',$label));$socialUrl=trim((string)($social['url']??''));if($socialUrl==='')continue;$icon=$socialIconMap[$key]??'fa-solid fa-link'; ?><a class="footer-social-icon footer-social-icon--<?= htmlspecialchars($key,ENT_QUOTES) ?>" href="<?= htmlspecialchars($socialUrl,ENT_QUOTES) ?>" target="_blank" rel="noopener noreferrer" aria-label="<?= htmlspecialchars($label,ENT_QUOTES) ?>" title="<?= htmlspecialchars($label,ENT_QUOTES) ?>"><i class="<?= htmlspecialchars($icon,ENT_QUOTES) ?>" aria-hidden="true"></i><span class="sr-only"><?= htmlspecialchars($label) ?></span></a><?php endforeach; ?>
     </nav>
     <div class="footer-bottom">
       <div class="footer-copy"><?= htmlspecialchars(str_replace(['{year}','{business}'],[date('Y'),html_entity_decode($sfBizName,ENT_QUOTES,'UTF-8')],(string)($sfChromeSettings['footer_copyright']??'© {year} {business}. All Rights Reserved.'))) ?></div>
