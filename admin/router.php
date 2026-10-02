@@ -1139,9 +1139,11 @@ if (str_starts_with($uri, '/admin/api/')) {
     }
 
     if (preg_match('#^/admin/api/orders/(\d+)/seen$#', $uri, $m) && $method === 'POST') {
-        if (!$ensureOrderSeenColumn()) json(['ok'=>false,'msg'=>'Seen tracking is unavailable. Run database migration.'], 500);
-        Database::query("UPDATE orders SET is_seen = 1 WHERE id = ?", [(int)$m[1]]);
-        json(['ok'=>true]);
+        \Auth\Auth::verifyCsrf();
+        if ($ensureOrderSeenColumn()) Database::query("UPDATE orders SET is_seen = 1 WHERE id = ?", [(int)$m[1]]);
+        $adminId=(int)(\Auth\Auth::admin()['id']??0);$unread=0;
+        try{$unread=\Notifications\AdminNotificationManager::markOrderRead($adminId,(int)$m[1]);}catch(\Throwable $e){error_log('Could not mark order notifications read: '.$e->getMessage());}
+        json(['ok'=>true,'notification_unread'=>$unread]);
     }
 
     if ($uri === '/admin/api/orders' && $method === 'GET') {
@@ -3109,7 +3111,6 @@ if ($uri === '/admin/orders') {
         unset($item);
     }
 
-    if ($hasSeen) Database::query("UPDATE orders SET is_seen=1 WHERE status='new_order' AND is_seen=0 AND created_at <= NOW()");
     view('admin/orders', compact('orders','total','page','perPage','status','search','summaryCounts','statusCounts','attentionCounts','attention','paymentStatus','seen','sort','dateFrom','dateTo','hasSeen'));
     exit;
 }

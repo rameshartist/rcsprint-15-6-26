@@ -92,9 +92,10 @@ class Razorpay
         $db = \Database::get();
         $db->beginTransaction();
         try {
-            $seedOrder=\Database::row("SELECT checkout_group_id FROM orders WHERE id=?",[$internalOrderId]);
+            $groupColumn=\Database::row("SELECT 1 ok FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='orders' AND COLUMN_NAME='checkout_group_id' LIMIT 1");
+            $seedOrder=$groupColumn?\Database::row("SELECT checkout_group_id FROM orders WHERE id=?",[$internalOrderId]):null;
             $group=(string)($seedOrder['checkout_group_id']??'');
-            $groupRows=$group!==''?\Database::rows("SELECT id FROM orders WHERE checkout_group_id=? ORDER BY id",[$group]):[['id'=>$internalOrderId]];
+            $groupRows=$groupColumn&&$group!==''?\Database::rows("SELECT id FROM orders WHERE checkout_group_id=? ORDER BY id",[$group]):[['id'=>$internalOrderId]];
             $orderIds=array_values(array_unique(array_map(static fn($row)=>(int)$row['id'],$groupRows)));
             $placeholders=implode(',',array_fill(0,count($orderIds),'?'));
             // Record payment
@@ -108,12 +109,9 @@ class Razorpay
             // Update order
             \Database::query("UPDATE orders SET payment_status='paid',payment_id=?,razorpay_order_id=?,status='new_order',updated_at=NOW() WHERE id IN ({$placeholders})",[$razorpayPaymentId,$razorpayOrderId,...$orderIds]);
 
-            \Database::query(
-                "UPDATE custom_quote_requests SET payment_status='paid',status='converted_to_order',customer_update_pending=1,customer_update_type='customer_paid',customer_update_at=NOW(),updated_at=NOW() WHERE order_id IN ({$placeholders})",
-                $orderIds
-            );
+            try{\Database::query("UPDATE custom_quote_requests SET payment_status='paid',status='converted_to_order',customer_update_pending=1,customer_update_type='customer_paid',customer_update_at=NOW(),updated_at=NOW() WHERE order_id IN ({$placeholders})",$orderIds);}catch(\Throwable $quoteUpdateError){error_log('Custom quote payment sync skipped: '.$quoteUpdateError->getMessage());}
 
-            foreach($orderIds as $orderId)\Database::insert("INSERT INTO order_status_history(order_id,status,note,created_by,created_at) VALUES(?,'new_order','Payment captured; order moved to New Order queue',?,NOW())",[$orderId,'system']);
+            foreach($orderIds as $orderId){try{\Database::insert("INSERT INTO order_status_history(order_id,status,note,created_by,created_at) VALUES(?,'new_order','Payment captured; order moved to New Order queue',?,NOW())",[$orderId,'system']);}catch(\Throwable $historyError){error_log('Payment order history insert skipped: '.$historyError->getMessage());}}
 
             $db->commit();
 

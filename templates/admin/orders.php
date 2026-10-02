@@ -422,8 +422,9 @@ function restoreOpenOrderCards() {
 function toggleOrderCard(btn) {
   const card = btn.closest('[data-order-card]');
   if (!card) return;
-  setOrderCardOpen(card, !card.classList.contains('open'));
+  const opening=!card.classList.contains('open');setOrderCardOpen(card,opening);if(opening)reviewOpenedOrder(card);
 }
+async function reviewOpenedOrder(card){if(!card||card.dataset.reviewed==='1')return;const id=Number((card.id||'').replace('ord-',''));if(!id)return;card.dataset.reviewed='1';try{const response=await fetch(`/admin/api/orders/${id}/seen`,{method:'POST',headers:{'X-CSRF-TOKEN':'<?= htmlspecialchars($csrf??'',ENT_QUOTES) ?>'},credentials:'same-origin'}),data=await response.json();if(!response.ok||!data.ok){card.dataset.reviewed='0';return;}window.dispatchEvent(new CustomEvent('admin:notification-read-count',{detail:{unread:Number(data.notification_unread)||0}}));document.querySelectorAll(`.adm-notification-item[href*="#ord-${id}"]`).forEach(item=>item.classList.remove('is-unread'));window.adminPollUpdates?.();}catch(_){card.dataset.reviewed='0';}}
 function toast(msg, type='info') {
   const w = document.getElementById('tw');
   const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg; w.appendChild(t);

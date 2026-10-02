@@ -397,7 +397,9 @@ class OrderManager
         $couponCode = $hasCustom ? null : ($params['coupon_code'] ?? null);
         $globalTotals = \Cart\Cart::totals($cartItems, $couponCode);
         $checkoutGroup = preg_replace('/[^A-Za-z0-9_-]/', '', (string)($params['checkout_group_id'] ?? '')) ?: ('checkout_'.bin2hex(random_bytes(12)));
-        $existing = \Database::rows("SELECT id FROM orders WHERE checkout_group_id=? AND user_id=? ORDER BY id", [$checkoutGroup,(int)$user['id']]);
+        $readiness=self::validateCheckoutStorage($cartItems);if(!($readiness['ok']??false))return $readiness;
+        $orderColumns=$readiness['order_columns'];$itemColumns=$readiness['item_columns'];
+        $existing = isset($orderColumns['checkout_group_id']) ? \Database::rows("SELECT id FROM orders WHERE checkout_group_id=? AND user_id=? ORDER BY id", [$checkoutGroup,(int)$user['id']]) : [];
         if ($existing) {
             $orders=array_values(array_filter(array_map(static fn($row)=>self::getOrder((int)$row['id']),$existing)));
             return ['ok'=>true,'order'=>$orders[0]??null,'orders'=>$orders,'checkout_group_id'=>$checkoutGroup,'already_processed'=>true];
@@ -421,26 +423,51 @@ class OrderManager
             $db->beginTransaction();
             foreach($groups as $key=>$items){
                 $isCustom=str_starts_with($key,'custom_');$quoteId=$isCustom?(int)($items[0]['custom_quote_id']??0):null;$totals=$groupTotals[$key];$orderId=self::generateOrderId();
-                $dbOrderId=\Database::insert("INSERT INTO orders (order_id,order_type,custom_quote_id,checkout_group_id,user_id,customer_name,customer_email,customer_phone,subtotal,discount_amount,gst_amount,gst_percent,total_amount,coupon_code,payment_method,payment_status,status,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'new_order',?,?)",[$orderId,$isCustom?'custom':'normal',$quoteId?:null,$checkoutGroup,$user['id'],$user['name'],$user['email'],$user['phone'],$totals['subtotal'],$totals['discount'],$totals['gst_amt'],$totals['gst_pct'],$totals['total'],$key==='regular'?$couponCode:null,$params['payment_method']??'razorpay',$params['payment_status']??'pending',$storedNotes,$now]);
+                $orderData=['order_id'=>$orderId,'user_id'=>$user['id'],'customer_name'=>$user['name'],'customer_email'=>$user['email'],'customer_phone'=>$user['phone'],'subtotal'=>$totals['subtotal'],'discount_amount'=>$totals['discount'],'gst_amount'=>$totals['gst_amt'],'gst_percent'=>$totals['gst_pct'],'total_amount'=>$totals['total'],'payment_method'=>$params['payment_method']??'razorpay','payment_status'=>$params['payment_status']??'pending','status'=>'new_order','notes'=>$storedNotes,'created_at'=>$now];
+                foreach(['order_type'=>$isCustom?'custom':'normal','custom_quote_id'=>$quoteId?:null,'checkout_group_id'=>$checkoutGroup,'coupon_code'=>$key==='regular'?$couponCode:null] as $optional=>$value)if(isset($orderColumns[$optional]))$orderData[$optional]=$value;
+                $orderNames=array_keys($orderData);$dbOrderId=(int)\Database::insert("INSERT INTO orders (`".implode('`,`',$orderNames)."`) VALUES (".implode(',',array_fill(0,count($orderNames),'?')).")",array_values($orderData));
                 foreach($items as $item){
                     $itemType=(string)($item['item_type']??'product');$isCatalog=$itemType==='product';
-                    $orderItemId=\Database::insert("INSERT INTO order_items (order_id,item_type,custom_quote_id,custom_product_image,combo_offer_id,product_id,quality_id,quantity,product_name,quality_name,attribute_selections,design_choice,design_brief,notes,price_breakdown,total_price,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",[$dbOrderId,in_array($itemType,['custom_quote','combo_offer'],true)?$itemType:'product',!empty($item['custom_quote_id'])?(int)$item['custom_quote_id']:null,$itemType==='custom_quote'?(string)($item['product_image']??''):null,!empty($item['combo_offer_id'])?(int)$item['combo_offer_id']:null,$isCatalog?(int)($item['product_id']??0):null,$isCatalog?(int)($item['quality_id']??1):null,(int)($item['quantity']??1),$item['product_name'],$item['quality_name'],$item['attribute_selections'],$item['design_choice'],$item['design_brief'],$item['notes'],$item['price_breakdown'],$item['total_price'],$now]);
+                    $itemData=['order_id'=>$dbOrderId,'product_id'=>$isCatalog?(int)($item['product_id']??0):null,'quantity'=>(int)($item['quantity']??1),'product_name'=>$item['product_name'],'quality_name'=>$item['quality_name'],'attribute_selections'=>is_string($item['attribute_selections']??null)?$item['attribute_selections']:json_encode($item['attribute_selections']??[],JSON_UNESCAPED_UNICODE),'design_choice'=>$item['design_choice']??'upload','design_brief'=>$item['design_brief']??'','notes'=>$item['notes']??'','price_breakdown'=>is_string($item['price_breakdown']??null)?$item['price_breakdown']:json_encode($item['price_breakdown']??[],JSON_UNESCAPED_UNICODE),'total_price'=>$item['total_price'],'created_at'=>$now];
+                    foreach(['item_type'=>in_array($itemType,['custom_quote','combo_offer'],true)?$itemType:'product','custom_quote_id'=>!empty($item['custom_quote_id'])?(int)$item['custom_quote_id']:null,'custom_product_image'=>$itemType==='custom_quote'?(string)($item['product_image']??''):null,'combo_offer_id'=>!empty($item['combo_offer_id'])?(int)$item['combo_offer_id']:null] as $optional=>$value)if(isset($itemColumns[$optional]))$itemData[$optional]=$value;
+                    if(isset($itemColumns['quality_id']))$itemData['quality_id']=$isCatalog?($readiness['quality_id']??null):null;
+                    $itemNames=array_keys($itemData);$orderItemId=(int)\Database::insert("INSERT INTO order_items (`".implode('`,`',$itemNames)."`) VALUES (".implode(',',array_fill(0,count($itemNames),'?')).")",array_values($itemData));
                     if(!empty($item['custom_quote_id']))\Database::query("UPDATE custom_quote_requests SET payment_status=?,status=?,order_id=?,updated_at=NOW() WHERE id=? AND payment_status<>'paid'",[($params['payment_status']??'pending')==='paid'?'paid':'payment_pending',($params['payment_status']??'pending')==='paid'?'converted_to_order':'payment_pending',$dbOrderId,(int)$item['custom_quote_id']]);
                     if(!empty($item['id']))\Database::query("UPDATE artwork_files SET order_item_id=?,cart_item_id=NULL WHERE cart_item_id=?",[$orderItemId,$item['id']]);
                     $art=\Database::row("SELECT id FROM artwork_files WHERE order_item_id=? ORDER BY id DESC LIMIT 1",[$orderItemId]);self::ensureDesignApprovalForItem($dbOrderId,$orderItemId,(string)($item['design_choice']??'upload'),$art?(int)$art['id']:null);
                 }
-                \Database::insert("INSERT INTO order_status_history(order_id,status,note,created_by,created_at) VALUES(?,'new_order','Order placed',?,?)",[$dbOrderId,'system',$now]);
+                try{\Database::insert("INSERT INTO order_status_history(order_id,status,note,created_by,created_at) VALUES(?,'new_order','Order placed',?,?)",[$dbOrderId,'system',$now]);}catch(\Throwable $historyError){error_log('Checkout order history insert skipped: '.$historyError->getMessage());}
                 $created[]=['id'=>$dbOrderId,'order_id'=>$orderId,'is_regular'=>!$isCustom];
             }
             if($couponCode&&!empty($globalTotals['coupon'])){$regularOrders=array_values(array_filter($created,fn($row)=>$row['is_regular']));$regularId=(int)($regularOrders[0]['id']??0);\Database::query("UPDATE coupons SET used_count=used_count+1 WHERE code=?",[$couponCode]);if($regularId)\Database::insert("INSERT INTO coupon_uses(coupon_id,order_id,user_id,discount_applied,used_at) VALUES(?,?,?,?,?)",[$globalTotals['coupon']['id'],$regularId,$user['id'],$globalTotals['discount'],$now]);}
             $db->commit();
-        }catch(\Throwable $e){if($db->inTransaction())$db->rollBack();error_log('Order placement failed: '.$e->getMessage());return ['ok'=>false,'msg'=>'Order placement failed. Please try again.'];}
+        }catch(\Throwable $e){if($db->inTransaction())$db->rollBack();error_log('Order placement failed ['.$e->getCode().']: '.$e->getMessage());return ['ok'=>false,'msg'=>'Order could not be saved after payment verification. Your payment reference is safe; please retry once or contact support.'];}
 
         try{if(($params['payment_method']??'razorpay')!=='razorpay')\Cart\Cart::clearPurchased();}catch(\Throwable $e){error_log('Order placed but cart clear failed: '.$e->getMessage());}
         $orders=[];foreach($created as $row){try{$order=self::getOrder((int)$row['id']);if($order){$orders[]=$order;self::afterOrderPlaced($order);}}catch(\Throwable $e){error_log('Order fetch failed: '.$e->getMessage());}}
         self::saveUserShippingDefault((int)$user['id'],$shipping,$saveShippingDefault);
         $primary=$orders[0]??['id'=>(int)($created[0]['id']??0),'order_id'=>(string)($created[0]['order_id']??''),'items'=>[]];
         return ['ok'=>true,'order'=>$primary,'orders'=>$orders,'order_id'=>$primary['order_id'],'checkout_group_id'=>$checkoutGroup];
+    }
+
+    /** Validate storage before the customer is sent to Razorpay. */
+    public static function validateCheckoutStorage(array $items): array
+    {
+        self::ensureCustomOrderSchema();
+        $readColumns=static function(string $table):array{$rows=\Database::rows("SELECT COLUMN_NAME,IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?",[$table]);$out=[];foreach($rows as $row)$out[(string)$row['COLUMN_NAME']]=$row;return $out;};
+        $orders=$readColumns('orders');$orderItems=$readColumns('order_items');
+        foreach(['order_id','user_id','customer_name','customer_email','customer_phone','subtotal','discount_amount','gst_amount','gst_percent','total_amount','payment_method','payment_status','status','notes','created_at'] as $column)if(!isset($orders[$column]))return ['ok'=>false,'msg'=>'Checkout is temporarily unavailable because the orders table is missing “'.$column.'”. No payment has been started.'];
+        foreach(['order_id','product_id','quantity','product_name','quality_name','attribute_selections','design_choice','design_brief','notes','price_breakdown','total_price','created_at'] as $column)if(!isset($orderItems[$column]))return ['ok'=>false,'msg'=>'Checkout is temporarily unavailable because the order items table is missing “'.$column.'”. No payment has been started.'];
+        $hasCustom=(bool)array_filter($items,static fn($item)=>(string)($item['item_type']??'product')==='custom_quote');$hasCombo=(bool)array_filter($items,static fn($item)=>(string)($item['item_type']??'product')==='combo_offer');
+        if($hasCustom&&(!isset($orders['custom_quote_id'])||!isset($orderItems['item_type'])||!isset($orderItems['custom_quote_id'])))return ['ok'=>false,'msg'=>'Custom-order checkout storage is not ready. No payment has been started.'];
+        if($hasCombo&&(!isset($orderItems['item_type'])||!isset($orderItems['combo_offer_id'])))return ['ok'=>false,'msg'=>'Combo Offer checkout storage is not ready. No payment has been started.'];
+        $qualityId=null;
+        if(isset($orderItems['quality_id'])&&strtoupper((string)($orderItems['quality_id']['IS_NULLABLE']??'NO'))!=='YES'){
+            $requested=max(1,(int)($items[0]['quality_id']??1));
+            try{$quality=\Database::row("SELECT id FROM qualities WHERE id=? LIMIT 1",[$requested])?:\Database::row("SELECT id FROM qualities WHERE is_active=1 ORDER BY sort_order,id LIMIT 1");$qualityId=$quality?(int)$quality['id']:null;}catch(\Throwable){}
+            if(!$qualityId)return ['ok'=>false,'msg'=>'Checkout requires an active product quality before an order can be saved. No payment has been started.'];
+        }
+        return ['ok'=>true,'order_columns'=>$orders,'item_columns'=>$orderItems,'quality_id'=>$qualityId];
     }
 
     public static function createByAdmin(array $data, int $adminId): array

@@ -88,4 +88,16 @@ final class AdminNotificationManager
         if ($id) \Database::query("UPDATE admin_notifications SET read_at=COALESCE(read_at,NOW()) WHERE id=? AND admin_id=?",[$id,$adminId]);
         else \Database::query("UPDATE admin_notifications SET read_at=COALESCE(read_at,NOW()) WHERE admin_id=?",[$adminId]);
     }
+
+    public static function markOrderRead(int $adminId, int $orderId): int
+    {
+        self::sync($adminId);
+        \Database::query(
+            "UPDATE admin_notifications SET read_at=COALESCE(read_at,NOW())
+             WHERE admin_id=? AND read_at IS NULL AND
+             (event_key=? OR event_key LIKE ? OR event_key LIKE ? OR action_url LIKE ?)",
+            [$adminId,'order:new:'.$orderId,'order:update:'.$orderId.':%','order:refund:'.$orderId.':%','%#ord-'.$orderId]
+        );
+        return (int)(\Database::row("SELECT COUNT(*) c FROM admin_notifications WHERE admin_id=? AND read_at IS NULL",[$adminId])['c']??0);
+    }
 }

@@ -600,6 +600,9 @@ if ($uri === '/api/payment/create-order' && $method === 'POST') {
     if (!$ensure['ok']) json($ensure, 400);
     $items  = \Cart\Cart::get();
     if (array_filter($items, static fn($item) => !empty($item['combo_unavailable']))) json(['ok'=>false,'msg'=>'A Combo Offer in your cart is no longer available. Please remove it and try again.'],422);
+    if (!$items) json(['ok'=>false,'msg'=>'Your cart is empty.'],422);
+    $storage = \Orders\OrderManager::validateCheckoutStorage($items);
+    if (!($storage['ok'] ?? false)) json($storage, 503);
     $hasCustomQuote = (bool)array_filter($items, static fn($item) => (int)($item['custom_quote_id'] ?? 0) > 0);
     $coupon = $hasCustomQuote ? null : ($body['coupon_code'] ?? null);
     $totals = \Cart\Cart::totals($items, $coupon);
