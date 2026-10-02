@@ -670,7 +670,7 @@ function selDesignOpt(choice) {
 
   if (uploadOpt) uploadOpt.classList.toggle('sel', designChoice === 'upload');
   if (rcsOpt) rcsOpt.classList.toggle('sel', designChoice === 'rcs');
-  if (uploadPanel) uploadPanel.style.display = designChoice === 'upload' ? 'block' : 'none';
+  if (uploadPanel) uploadPanel.style.display = 'block';
   if (rcsPanel) rcsPanel.style.display = designChoice === 'rcs' ? 'block' : 'none';
 
   calcPrice();
