@@ -1204,3 +1204,4 @@ body.admin-page-dashboard .dash-ref-empty{min-height:80px;display:grid;place-ite
 
 /* Give the dashboard reporting controls comfortable space from the right edge. */
 @media(min-width:901px){body.admin-page-dashboard .dash-ref-title-actions{flex:1;margin-left:clamp(28px,5vw,88px);margin-right:clamp(18px,2.4vw,42px);justify-content:flex-end}body.admin-page-dashboard .dash-date-form{column-gap:16px}body.admin-page-dashboard .dash-date-form button{margin-left:12px}}
+.adm-customer-loaded{margin:12px 0;padding:10px 12px;border:1px solid #dbeafe;border-radius:10px;background:#eff6ff;color:#1e40af;font-size:12px;font-weight:700;line-height:1.45}.combo-form-grid.is-loaded{padding:12px;border:1px solid #bbf7d0;border-radius:13px;background:#f0fdf4}.combo-form-grid.is-loaded input[readonly]{background:#fff;color:#334155;cursor:default}

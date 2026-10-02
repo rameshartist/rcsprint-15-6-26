@@ -3260,7 +3260,7 @@ if ($uri === '/admin/orders/new' && $method === 'GET') {
     unset($product);
     $categories = array_values(array_filter(\Catalog\ProductCatalog::categories(), static fn(array $category): bool => !empty($category['is_active']) && (int)($category['product_count'] ?? 0) > 0));
     view('admin/order-new', [
-        'customers' => Database::rows("SELECT id,name,email,phone FROM users ORDER BY name LIMIT 1000"),
+        'customers' => Database::rows("SELECT id,name,email,phone,company FROM users ORDER BY name LIMIT 1000"),
         'categories' => $categories,
         'products' => $products,
     ]);

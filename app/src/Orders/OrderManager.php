@@ -462,25 +462,34 @@ class OrderManager
         $categoryId=(int)($data['category_id']??0);if($categoryId<=0||(int)($product['category_id']??0)!==$categoryId)return ['ok'=>false,'msg'=>'The selected product does not belong to this category. Please select it again.'];
         $pricing=\Cart\Pricing::calculate($productId,1,$quantity,[],$designChoice);if(!($pricing['ok']??false))return $pricing;
         $item=['total_price'=>(float)$pricing['total']];$totals=\Cart\Cart::totals([$item]);$notes=trim((string)($data['notes']??''));$now=date('Y-m-d H:i:s');$db=\Database::get();
+        $company=trim((string)($data['customer_company']??''));
+        $columnInfo=static function(string $table):array{$rows=\Database::rows("SELECT COLUMN_NAME,IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?",[$table]);$result=[];foreach($rows as $row)$result[(string)$row['COLUMN_NAME']]=$row;return $result;};
+        $orderColumns=$columnInfo('orders');$itemColumns=$columnInfo('order_items');
+        foreach(['order_id','user_id','customer_name','customer_email','customer_phone','subtotal','discount_amount','gst_amount','gst_percent','total_amount','payment_method','payment_status','status','notes','created_at'] as $required){if(!isset($orderColumns[$required]))return ['ok'=>false,'msg'=>'The existing orders table is missing the required “'.$required.'” field. Please contact the site administrator.'];}
+        foreach(['order_id','product_id','quantity','product_name','quality_name','attribute_selections','design_choice','design_brief','notes','price_breakdown','total_price','created_at'] as $required){if(!isset($itemColumns[$required]))return ['ok'=>false,'msg'=>'The existing order items table is missing the required “'.$required.'” field. Please contact the site administrator.'];}
         try{
             $db->beginTransaction();
             if(!$user){
                 $temporaryPassword=preg_replace('/\D+/','',$phone);
-                $userId=(int)\Database::insert("INSERT INTO users(name,email,phone,company,password,marketing_consent,created_at) VALUES(?,?,?,'',?,0,NOW())",[$name,$email,$phone,password_hash($temporaryPassword,PASSWORD_BCRYPT,['cost'=>10])]);
-                $user=['id'=>$userId,'name'=>$name,'email'=>$email,'phone'=>$phone];$createdUser=true;
+                $userId=(int)\Database::insert("INSERT INTO users(name,email,phone,company,password,marketing_consent,created_at) VALUES(?,?,?,?,?,0,NOW())",[$name,$email,$phone,$company,password_hash($temporaryPassword,PASSWORD_BCRYPT,['cost'=>10])]);
+                $user=['id'=>$userId,'name'=>$name,'email'=>$email,'phone'=>$phone,'company'=>$company];$createdUser=true;
             }else{$userId=(int)$user['id'];}
             $orderId=self::generateOrderId();
-            $dbOrderId=(int)\Database::insert(
-                "INSERT INTO orders(order_id,order_type,checkout_group_id,order_source,created_by_admin_id,user_id,customer_name,customer_email,customer_phone,subtotal,discount_amount,gst_amount,gst_percent,total_amount,payment_method,payment_status,status,notes,created_at)
-                 VALUES(?,'normal',?,'admin',?,?,?,?,?,?,?,?,?,?,'razorpay','pending','new_order',?,?)",
-                [$orderId,'admin_'.bin2hex(random_bytes(10)),$adminId,$userId,$user['name'],$user['email'],$user['phone'],$totals['subtotal'],0,$totals['gst_amt'],$totals['gst_pct'],$totals['total'],$notes,$now]
-            );
-            $orderItemId=\Database::insert("INSERT INTO order_items(order_id,item_type,product_id,quality_id,quantity,product_name,quality_name,attribute_selections,design_choice,design_brief,notes,price_breakdown,total_price,created_at) VALUES(?,'product',?,NULL,?,?,?,'[]',?,?,?,?,?,?)",[$dbOrderId,$productId,$quantity,$product['name'],'Standard',$designChoice,trim((string)($data['design_brief']??'')),$notes,json_encode($pricing['breakdown'],JSON_UNESCAPED_UNICODE),$pricing['total'],$now]);
-            self::ensureDesignApprovalForItem($dbOrderId,$orderItemId,$designChoice,null);\Database::insert("INSERT INTO order_status_history(order_id,status,note,created_by,created_at) VALUES(?,'new_order','Order added by admin',?,?)",[$dbOrderId,'admin:'.$adminId,$now]);$db->commit();
+            $orderData=['order_id'=>$orderId,'user_id'=>$userId,'customer_name'=>$user['name'],'customer_email'=>$user['email'],'customer_phone'=>$user['phone'],'subtotal'=>$totals['subtotal'],'discount_amount'=>0,'gst_amount'=>$totals['gst_amt'],'gst_percent'=>$totals['gst_pct'],'total_amount'=>$totals['total'],'payment_method'=>'razorpay','payment_status'=>'pending','status'=>'new_order','notes'=>$notes,'created_at'=>$now];
+            foreach(['order_type'=>'normal','checkout_group_id'=>'admin_'.bin2hex(random_bytes(10)),'order_source'=>'admin','created_by_admin_id'=>$adminId] as $optional=>$value)if(isset($orderColumns[$optional]))$orderData[$optional]=$value;
+            if(!isset($orderColumns['order_source']))$orderData['notes']=trim("Order Added by Admin\n".$orderData['notes']);
+            $orderNames=array_keys($orderData);$dbOrderId=(int)\Database::insert("INSERT INTO orders (`".implode('`,`',$orderNames)."`) VALUES (".implode(',',array_fill(0,count($orderNames),'?')).")",array_values($orderData));
+            $itemData=['order_id'=>$dbOrderId,'product_id'=>$productId,'quantity'=>$quantity,'product_name'=>$product['name'],'quality_name'=>'Standard','attribute_selections'=>'[]','design_choice'=>$designChoice,'design_brief'=>trim((string)($data['design_brief']??'')),'notes'=>$notes,'price_breakdown'=>json_encode($pricing['breakdown'],JSON_UNESCAPED_UNICODE),'total_price'=>$pricing['total'],'created_at'=>$now];
+            if(isset($itemColumns['item_type']))$itemData['item_type']='product';
+            if(isset($itemColumns['quality_id']))$itemData['quality_id']=strtoupper((string)($itemColumns['quality_id']['IS_NULLABLE']??'NO'))==='YES'?null:1;
+            $itemNames=array_keys($itemData);$orderItemId=(int)\Database::insert("INSERT INTO order_items (`".implode('`,`',$itemNames)."`) VALUES (".implode(',',array_fill(0,count($itemNames),'?')).")",array_values($itemData));
+            self::ensureDesignApprovalForItem($dbOrderId,$orderItemId,$designChoice,null);
+            try{\Database::insert("INSERT INTO order_status_history(order_id,status,note,created_by,created_at) VALUES(?,'new_order','Order added by admin',?,?)",[$dbOrderId,'admin:'.$adminId,$now]);}catch(\Throwable $historyError){error_log('Admin order history insert skipped: '.$historyError->getMessage());}
+            $db->commit();
         }catch(\Throwable $e){
             if($db->inTransaction())$db->rollBack();
             error_log('Admin order creation failed ['.$e->getCode().']: '.$e->getMessage());
-            $message='Order could not be saved because the order database schema is incomplete. Please apply the pending order migrations and retry.';
+            $message='Order could not be saved. The server has logged the exact database error; please retry or contact the site administrator.';
             if($e instanceof \PDOException){$sqlState=(string)($e->errorInfo[0]??$e->getCode());$driverCode=(int)($e->errorInfo[1]??0);if($sqlState==='23000'&&$driverCode===1062)$message='A customer or order with the same unique information already exists. Refresh the page and retry using the existing customer.';elseif($sqlState==='23000')$message='Order data did not match an existing database relationship. Please reselect the customer and product, then retry.';elseif($sqlState==='42S22')$message='A required order database migration is pending. Please apply the latest migrations and retry.';}
             return ['ok'=>false,'msg'=>$message];
         }
