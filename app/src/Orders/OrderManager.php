@@ -382,6 +382,7 @@ class OrderManager
 
     public static function place(array $params): array
     {
+        \Documents\DocumentNumberManager::ensureSchema();
         self::ensureWorkflowSchema();
         self::ensureDesignApprovalSchema();
         self::ensureDesignEventSchema();
@@ -472,6 +473,7 @@ class OrderManager
 
     public static function createByAdmin(array $data, int $adminId): array
     {
+        \Documents\DocumentNumberManager::ensureSchema();
         self::ensureCustomOrderSchema(); self::ensureDesignApprovalSchema(); self::ensureWorkflowSchema();
         $userId=(int)($data['user_id']??0);$createdUser=false;$temporaryPassword=null;$user=null;
         $name=trim((string)($data['customer_name']??''));$email=strtolower(trim((string)($data['customer_email']??'')));$phone=trim((string)($data['customer_phone']??''));
@@ -884,13 +886,7 @@ class OrderManager
 
     private static function generateOrderId(): string
     {
-        // COUNT(*) can reuse an existing ID after test orders are deleted. Continue
-        // from the greatest issued RCS number instead, preserving the public format.
-        $row = \Database::row(
-            "SELECT MAX(CASE WHEN order_id REGEXP '^RCS[0-9]+$' THEN CAST(SUBSTRING(order_id,4) AS UNSIGNED) END) AS max_number FROM orders"
-        );
-        $next = max(1000, (int)($row['max_number'] ?? 0)) + 1;
-        return 'RCS' . str_pad((string)$next, 5, '0', STR_PAD_LEFT);
+        return \Documents\DocumentNumberManager::next('order');
     }
 
     private static function sanitizeBilling(mixed $billing): ?array

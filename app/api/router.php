@@ -373,7 +373,7 @@ if ($uri === '/api/custom-quotes' && $method === 'POST') {
                 substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255),
             ]
         );
-        $code = 'CQ-' . str_pad((string)(int)$id, 4, '0', STR_PAD_LEFT);
+        $code = \Documents\DocumentNumberManager::next('quote');
         Database::query("UPDATE custom_quote_requests SET request_code=? WHERE id=?", [$code, (int)$id]);
         json(['ok' => true, 'id' => (int)$id, 'request_code' => $code, 'customer_type' => $customerType, 'msg' => $customerType === 'registered' ? 'Quotation request received and linked to your account.' : 'Quotation request received. Create/login to an account later to track and pay.']);
     } catch (\Throwable $e) {

@@ -1983,7 +1983,7 @@ if (str_starts_with($uri, '/admin/api/')) {
         $id = Database::insert("INSERT INTO custom_quote_requests (request_code,user_id,customer_name,phone,email,product_name,size_dimension,material_type,quantity,instructions,status,customer_type,quote_token,source_page,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,'new',?,?, 'admin',NOW())", [
             $pendingCode,$userId?:null,$name,$phone,$email?:null,$product,trim((string)($body['size_dimension'] ?? '')),trim((string)($body['material_type'] ?? '')),trim((string)($body['quantity'] ?? '')),trim((string)($body['instructions'] ?? '')),$userId?'registered':'guest',$token
         ]);
-        $code = 'CQ-' . str_pad((string)$id, 4, '0', STR_PAD_LEFT);
+        $code = \Documents\DocumentNumberManager::next('quote', (int)(\Auth\Auth::admin()['id'] ?? 0));
         Database::query("UPDATE custom_quote_requests SET request_code=? WHERE id=?", [$code,(int)$id]);
         json(['ok'=>true,'id'=>(int)$id,'request_code'=>$code]);
     }
@@ -2828,7 +2828,36 @@ if (str_starts_with($uri, '/admin/api/')) {
     json(['ok'=>false,'msg'=>'Admin API not found'],404);
 }
 
+if ($uri === '/admin/settings/document-numbering/reset' && $method === 'POST') {
+    \Auth\Auth::verifyCsrf();
+    $type = (string)($_POST['document_type'] ?? '');
+    try {
+        $admin = \Auth\Auth::admin();
+        $result = \Documents\DocumentNumberManager::reset($type, (int)($admin['id'] ?? 0));
+        if ($result['ok']) \Orders\AdminAudit::log('document_sequence_reset', ucfirst($type) . ' ID sequence reset');
+        redirect('/admin/settings?numbering=' . ($result['ok'] ? 'reset' : 'blocked') . '&message=' . urlencode((string)$result['msg']));
+    } catch (\Throwable $e) {
+        error_log('Document sequence reset failed: ' . $e->getMessage());
+        redirect('/admin/settings?numbering=error&message=' . urlencode('Sequence could not be reset. Please check the database migration.'));
+    }
+}
+
 if ($uri === '/admin/settings/save' && $method === 'POST') {
+    \Auth\Auth::verifyCsrf();
+    $yearLabel = strtoupper(trim((string)($_POST['document_year_label'] ?? '')));
+    $orderPrefix = strtoupper(trim((string)($_POST['order_id_prefix'] ?? '')));
+    $quotePrefix = strtoupper(trim((string)($_POST['quote_id_prefix'] ?? '')));
+    $yearParts = preg_match('/^(\d{2})-(\d{2})$/', $yearLabel, $yearMatch) ? [(int)$yearMatch[1], (int)$yearMatch[2]] : [];
+    if (!$yearParts || $yearParts[1] !== (($yearParts[0] + 1) % 100)
+        || !preg_match('/^[A-Z0-9]{1,12}$/', $orderPrefix)
+        || !preg_match('/^[A-Z0-9]{1,12}$/', $quotePrefix)) {
+        redirect('/admin/settings?saved=0&err=' . urlencode('Use YY-YY for the year and 1-12 letters/numbers for each prefix.'));
+    }
+    $_POST['document_year_label'] = $yearLabel;
+    $_POST['order_id_prefix'] = $orderPrefix;
+    $_POST['quote_id_prefix'] = $quotePrefix;
+    $_POST['order_id_padding'] = (string)max(2, min(8, (int)($_POST['order_id_padding'] ?? 3)));
+    $_POST['quote_id_padding'] = (string)max(2, min(8, (int)($_POST['quote_id_padding'] ?? 3)));
     foreach ($_POST as $k => $v) {
         if ($k !== '_token' && $k !== 'new_admin_password') Database::setSetting($k, trim((string)$v));
     }
