@@ -3,10 +3,25 @@ $pageTitle = 'Settings — RCS Admin';
 $currentAdmPage = 'settings';
 include __DIR__ . '/layout.php';
 $saved = isset($_GET['saved']) && $_GET['saved'] === '1';
+$numberingMessage = trim((string)($_GET['message'] ?? ''));
+$numberingOk = ($_GET['numbering'] ?? '') === 'reset';
+$defaultDocumentYear = \Documents\DocumentNumberManager::defaultYearLabel();
+try {
+  $orderNumbering = \Documents\DocumentNumberManager::preview('order');
+  $quoteNumbering = \Documents\DocumentNumberManager::preview('quote');
+} catch (\Throwable $e) {
+  $orderNumbering = ['preview' => 'Unavailable'];
+  $quoteNumbering = ['preview' => 'Unavailable'];
+}
 ?>
 <?php if ($saved): ?>
 <div style="background:var(--green-bg);border:1px solid var(--green-mid);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--green);font-weight:600">
   ✅ Settings saved successfully!
+</div>
+<?php endif; ?>
+<?php if ($numberingMessage !== ''): ?>
+<div style="background:<?= $numberingOk ? 'var(--green-bg)' : '#fff7ed' ?>;border:1px solid <?= $numberingOk ? 'var(--green-mid)' : '#fdba74' ?>;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:14px;color:<?= $numberingOk ? 'var(--green)' : '#9a3412' ?>;font-weight:600">
+  <?= htmlspecialchars($numberingMessage) ?>
 </div>
 <?php endif; ?>
 <div class="adm-pt">Settings</div>
@@ -69,11 +84,30 @@ $saved = isset($_GET['saved']) && $_GET['saved'] === '1';
   </div>
 
   <div class="fsec">
+    <div class="fsec-t">🔢 Order &amp; Quote Numbering</div>
+    <p style="margin:-2px 0 16px;color:var(--text2);font-size:14px;line-height:1.55">Set the financial-year label and public ID prefixes. Existing IDs are preserved. A sequence can only be reset when no ID has been issued for the selected year and prefix.</p>
+    <div class="f2">
+      <div class="fg"><label>Financial Year (YY-YY)</label><input name="document_year_label" class="fi" value="<?= htmlspecialchars($settingsMap['document_year_label'] ?? $defaultDocumentYear) ?>" pattern="\d{2}-\d{2}" maxlength="5" placeholder="26-27" required></div>
+      <div class="fg"><label>Order ID Prefix</label><input name="order_id_prefix" class="fi" value="<?= htmlspecialchars($settingsMap['order_id_prefix'] ?? 'RCS') ?>" pattern="[A-Za-z0-9]{1,12}" maxlength="12" required></div>
+    </div>
+    <div class="f2">
+      <div class="fg"><label>Quote ID Prefix</label><input name="quote_id_prefix" class="fi" value="<?= htmlspecialchars($settingsMap['quote_id_prefix'] ?? 'CQ') ?>" pattern="[A-Za-z0-9]{1,12}" maxlength="12" required></div>
+      <div class="fg"><label>Number Digits</label><div style="display:flex;gap:12px"><input type="number" name="order_id_padding" class="fi" min="2" max="8" value="<?= htmlspecialchars($settingsMap['order_id_padding'] ?? '3') ?>" aria-label="Order number digits"><input type="number" name="quote_id_padding" class="fi" min="2" max="8" value="<?= htmlspecialchars($settingsMap['quote_id_padding'] ?? '3') ?>" aria-label="Quote number digits"></div><small style="color:var(--text2)">Order digits / Quote digits</small></div>
+    </div>
+    <div class="f2">
+      <div class="fg"><label>Next Order ID</label><div class="fi" style="background:#f8fafc;font-weight:700"><?= htmlspecialchars((string)$orderNumbering['preview']) ?></div><button type="submit" form="reset-order-sequence" class="btn btn-outline btn-sm" style="margin-top:9px" onclick="return confirm('Reset the order counter to 1? This is allowed only when this year/prefix has no issued IDs.')">Reset Order Counter</button></div>
+      <div class="fg"><label>Next Quote ID</label><div class="fi" style="background:#f8fafc;font-weight:700"><?= htmlspecialchars((string)$quoteNumbering['preview']) ?></div><button type="submit" form="reset-quote-sequence" class="btn btn-outline btn-sm" style="margin-top:9px" onclick="return confirm('Reset the quote counter to 1? This is allowed only when this year/prefix has no issued IDs.')">Reset Quote Counter</button></div>
+    </div>
+  </div>
+
+  <div class="fsec">
     <div class="fsec-t">🔐 Admin Security</div>
     <div class="fg"><label>New Admin Password (leave blank to keep current)</label><input type="password" name="new_admin_password" class="fi" placeholder="Enter new password (min 6 chars)"></div>
   </div>
 
   <button type="submit" class="btn btn-blue" style="padding:13px 28px;border-radius:10px">Save All Settings ✓</button>
 </form>
+<form id="reset-order-sequence" method="POST" action="/admin/settings/document-numbering/reset"><input type="hidden" name="_token" value="<?= htmlspecialchars($csrf ?? '') ?>"><input type="hidden" name="document_type" value="order"></form>
+<form id="reset-quote-sequence" method="POST" action="/admin/settings/document-numbering/reset"><input type="hidden" name="_token" value="<?= htmlspecialchars($csrf ?? '') ?>"><input type="hidden" name="document_type" value="quote"></form>
     </div></div></div>
 </body></html>

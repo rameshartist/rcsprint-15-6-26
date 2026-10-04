@@ -94,7 +94,7 @@ Please share any artwork, size, quantity or reference details here so our team c
 
 Thank you,
 {business_name}"],
-    'custom_quote_sent' => ['title' => 'Send Custom Quote', 'description' => 'Sent after the quoted amount and quote note are saved.', 'body' => "Hello {customer_name}, 👋\n\nThank you for your custom quotation request {quote_id}.\n\nProduct: {product_name}\nSize: {size_dimension}\nMaterial: {material_type}\nQuantity: {quantity}\nQuoted Amount: {quoted_amount}\n\n{quote_note}\n\nPlease reply APPROVE to confirm this quote.\n\nThank you,\n{business_name}"],
+    'custom_quote_sent' => ['title' => 'Send Custom Quote', 'description' => 'Sent after the amount, design fee and quote note are saved.', 'body' => "Hello {customer_name}, 👋\n\nThank you for your custom quotation request {quote_id}.\n\nProduct: {product_name}\nSize: {size_dimension}\nMaterial: {material_type}\nQuantity: {quantity}\nAmount: {quoted_amount}\nDesign Fee: {design_fee}\nSubtotal before GST: {custom_subtotal}\n\n{quote_note}\n\nPlease reply APPROVE to confirm this quote.\n\nThank you,\n{business_name}"],
     'custom_quote_payment' => ['title' => 'Send Custom Order Payment Link', 'description' => 'Sent after approval, account linking and payment-link generation.', 'body' => "Hello {customer_name}, 👋\n\nYour custom order {quote_id} is ready for payment.\n\nAmount: {quoted_amount}\n\nLogin here: {login_url}\nLogin with: {login_identifier}\nPassword: {login_password}\n\nYour custom order is already added to your cart. Open your secure payment link to continue: {payment_link}\n\nThank you,\n{business_name}"],
 ];
 $labels = [
@@ -137,11 +137,14 @@ $placeholders = [
     'size_dimension' => 'Requested size / dimension',
     'material_type' => 'Requested material',
     'quoted_amount' => 'Final quoted amount',
+    'design_fee' => 'Custom-order design fee',
+    'custom_subtotal' => 'Amount plus design fee',
     'quote_note' => 'Admin quote note',
     'login_url' => 'Customer login URL',
     'login_identifier' => 'Customer login email / mobile',
     'login_password' => 'Customer login password',
     'payment_link' => 'Custom order payment link',
+    'custom_cart_url' => 'Custom order cart / checkout link',
 ];
 ?>
 <div class="wa-template-page">

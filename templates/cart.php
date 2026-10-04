@@ -10,6 +10,7 @@ $cartGstPct = (float)($totals['gst_pct'] ?? 18);
 $cartGstAmt = (float)($totals['gst_amt'] ?? 0);
 $cartShipping = (float)($totals['shipping'] ?? 0);
 $cartTotal = (float)($totals['total'] ?? 0);
+$checkoutUrl = '/checkout';
 ?>
 <div class="cartp-wrap">
   <div class="container cartp-page">
@@ -43,6 +44,7 @@ $cartTotal = (float)($totals['total'] ?? 0);
           $quality = trim((string)($item['quality_name'] ?? ($priceBreakdown['quality_name'] ?? '')));
           $designChoice = (string)($item['design_choice'] ?? ($priceBreakdown['design_choice'] ?? 'upload'));
           $isCustomQuote = (($item['item_type'] ?? 'product') === 'custom_quote');
+          $isComboOffer = (($item['item_type'] ?? 'product') === 'combo_offer');
           try {
               if ($isCustomQuote) {
                   $qtyOptions = [1];
@@ -62,14 +64,16 @@ $cartTotal = (float)($totals['total'] ?? 0);
         ?>
         <article class="cartp-row">
           <div class="cartp-prod" data-label="Product">
-            <?php if ($isCustomQuote): ?><span class="cartp-img cartp-img-custom"><?php else: ?><a class="cartp-img" href="/product/<?= htmlspecialchars($item['slug'] ?? '') ?>"><?php endif; ?>
+            <?php if ($isCustomQuote || $isComboOffer): ?><span class="cartp-img cartp-img-custom"><?php else: ?><a class="cartp-img" href="/product/<?= htmlspecialchars($item['slug'] ?? '') ?>"><?php endif; ?>
               <img src="<?= htmlspecialchars($item['product_image'] ?? '') ?>" alt="<?= htmlspecialchars($item['product_name'] ?? '') ?>" onerror="this.style.display='none'">
-            <?php if ($isCustomQuote): ?></span><?php else: ?></a><?php endif; ?>
+            <?php if ($isCustomQuote || $isComboOffer): ?></span><?php else: ?></a><?php endif; ?>
             <div class="cartp-prod-copy">
               <h3><?= htmlspecialchars($item['product_name'] ?? '') ?></h3>
               <?php if ($isCustomQuote): ?>
                 <p><strong>Custom Quote<?= !empty($item['custom_quote_code']) ? ' #' . htmlspecialchars((string)$item['custom_quote_code']) : '' ?></strong></p>
                 <small><?= !empty($item['custom_requested_quantity']) ? 'Requested Qty: ' . htmlspecialchars((string)$item['custom_requested_quantity']) . ' · ' : '' ?><?= !empty($item['custom_size_dimension']) ? 'Size: ' . htmlspecialchars((string)$item['custom_size_dimension']) . ' · ' : '' ?><?= !empty($item['custom_material_type']) ? 'Material: ' . htmlspecialchars((string)$item['custom_material_type']) : 'Custom print requirement' ?></small>
+              <?php elseif ($isComboOffer): ?>
+                <p><strong>Combo Offer</strong></p><small>Multiple printing products included</small>
               <?php else: ?>
                 <p><?= number_format($itemQty) ?> pcs<?= $quality !== '' ? ', ' . htmlspecialchars($quality) : '' ?></p>
                 <?php if ($designChoice === 'rcs'): ?>
@@ -85,8 +89,8 @@ $cartTotal = (float)($totals['total'] ?? 0);
             <small>Base price</small>
           </div>
           <div class="cartp-qty" data-label="Quantity">
-            <?php if ($isCustomQuote): ?>
-              <span class="cartp-fixed-qty">Custom</span>
+            <?php if ($isCustomQuote || $isComboOffer): ?>
+              <span class="cartp-fixed-qty"><?= $isComboOffer ? 'Combo' : 'Custom' ?></span>
             <?php else: ?>
               <select class="cartp-qty-select" onchange="updateCartQty('<?= htmlspecialchars($itemId, ENT_QUOTES) ?>', this.value, this)" aria-label="Select quantity for <?= htmlspecialchars($item['product_name'] ?? '', ENT_QUOTES) ?>">
                 <?php foreach ($qtyOptions as $qty): ?>
@@ -99,9 +103,13 @@ $cartTotal = (float)($totals['total'] ?? 0);
             <strong>₹<?= number_format($lineTotal) ?></strong>
             <?php if ($designFee > 0): ?><small>Includes ₹<?= number_format($designFee) ?> design fee</small><?php endif; ?>
           </div>
-          <button class="cartp-del" onclick="removeCartItem('<?= htmlspecialchars($itemId, ENT_QUOTES) ?>')" aria-label="Remove <?= htmlspecialchars($item['product_name'] ?? 'item', ENT_QUOTES) ?>">
-            <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
-          </button>
+          <?php if ($isCustomQuote): ?>
+            <span class="cartp-fixed-qty" title="Custom orders remain in cart until payment">Payment pending</span>
+          <?php else: ?>
+            <button class="cartp-del" onclick="removeCartItem('<?= htmlspecialchars($itemId, ENT_QUOTES) ?>')" aria-label="Remove <?= htmlspecialchars($item['product_name'] ?? 'item', ENT_QUOTES) ?>">
+              <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+            </button>
+          <?php endif; ?>
         </article>
         <?php endforeach; ?>
 
@@ -119,7 +127,7 @@ $cartTotal = (float)($totals['total'] ?? 0);
           <div class="r"><span>GST (<span id="cartSummaryGstPct"><?= htmlspecialchars((string)$cartGstPct, ENT_QUOTES, 'UTF-8') ?></span>%)</span><strong id="cartSummaryGst">₹<?= number_format($cartGstAmt) ?></strong></div>
           <div class="r"><span>Shipping</span><strong id="cartSummaryShipping" class="<?= $cartShipping > 0 ? '' : 'is-free' ?>"><?= $cartShipping > 0 ? '₹' . number_format($cartShipping) : 'Free' ?></strong></div>
           <div class="rt"><span>Total</span><strong id="cartSummaryTotal">₹<?= number_format($cartTotal) ?></strong></div>
-          <a href="/checkout" class="cartp-checkout">Proceed to Checkout <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          <a href="<?= htmlspecialchars($checkoutUrl, ENT_QUOTES) ?>" class="cartp-checkout">Proceed to Checkout <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
           <div class="cartp-secure"><i class="fa-solid fa-lock" aria-hidden="true"></i> Secure Checkout</div>
         </div>
 
