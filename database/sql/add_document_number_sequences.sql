@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS document_number_sequences (
+    document_type VARCHAR(20) NOT NULL,
+    year_label VARCHAR(5) NOT NULL,
+    prefix VARCHAR(12) NOT NULL,
+    next_number BIGINT UNSIGNED NOT NULL DEFAULT 1,
+    padding TINYINT UNSIGNED NOT NULL DEFAULT 3,
+    updated_by INT UNSIGNED NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (document_type, year_label, prefix)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

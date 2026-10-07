@@ -38,7 +38,7 @@ $designApprovalLabels = ['pending_review'=>'Pending Review','issue_found'=>'Issu
   <div class="ord-card">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px">
       <div>
-        <div class="ord-id">#<?= htmlspecialchars($order['order_id']) ?></div>
+        <div class="ord-id"><?= htmlspecialchars($order['order_id']) ?></div>
         <div class="ord-prod"><?= htmlspecialchars($itemDesc) ?></div>
         <div class="ord-meta">
           <?= date('d M Y', strtotime($order['created_at'])) ?> ·
