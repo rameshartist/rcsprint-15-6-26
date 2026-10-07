@@ -28,6 +28,12 @@ $navWa       = htmlspecialchars($bizSettings['biz_whatsapp']     ?? '91987654321
 $navRazKey   = htmlspecialchars($bizSettings['razorpay_key_id']  ?? '');
 $navGst      = (int)($bizSettings['gst_percent'] ?? 18);
 $navDesignFee= (float)($bizSettings['design_fee'] ?? 0);
+try { $siteChrome = \Site\SiteChromeManager::payload(); } catch (\Throwable) { $siteChrome = ['settings'=>[], 'navigation'=>[]]; }
+$chromeSettings = $siteChrome['settings'] ?? []; $headerNav = $siteChrome['navigation']['header'] ?? [];
+if(!$headerNav&&empty($chromeSettings['navigation_v2_initialized']))$headerNav=[['label'=>'Home','url'=>'/','is_active'=>1],['label'=>'About','url'=>'/about','is_active'=>1],['label'=>'Products','url'=>'@products','is_active'=>1],['label'=>'Portfolio','url'=>'/portfolio','is_active'=>1],['label'=>'Blog','url'=>'/blogs','is_active'=>1],['label'=>'Contact','url'=>'/contact','is_active'=>1]];
+$headerNavActive=array_values(array_filter($headerNav,static fn($item)=>(int)($item['is_active']??1)===1));
+$headerNavByUrl=[];foreach($headerNavActive as $item)$headerNavByUrl[(string)$item['url']]=$item;
+$headerHome=$headerNavByUrl['/']??null;$headerAbout=$headerNavByUrl['/about']??null;$headerProducts=$headerNavByUrl['@products']??null;if(!$headerNav)$headerProducts=['label'=>'Products'];
 $catIcons    = ['Cards'=>'💳','Brochures'=>'📋','Flyers'=>'📄','Pamphlets'=>'📰','Stationery'=>'📝','Banners'=>'🏳️','Posters'=>'🖼️'];
 $currentUri  = $uri ?? '/';
 $productsActive = $currentUri === '/products' || $currentUri === '/categories' || str_starts_with($currentUri, '/category/') || str_starts_with($currentUri, '/product/');
@@ -58,12 +64,13 @@ foreach ($navProducts as $p) {
      SITE HEADER
 ══════════════════════════════════════════════════ -->
 <header class="site-header rcs-site-header" id="siteHeader">
+  <?php if((int)($chromeSettings['top_bar_active']??1)===1): ?>
   <div class="topbar rcs-topbar" data-design-target="header.topbar">
     <div class="header-container topbar-inner rcs-header-container rcs-topbar-inner">
       <div class="topbar-left rcs-topbar-left">
         <span>
           <i class="fa-solid fa-truck-fast" aria-hidden="true"></i>
-          Free Delivery in Rajkot on All Orders Above ₹999
+          <?php $announcement=htmlspecialchars((string)($chromeSettings['top_bar_text'] ?? 'Free Delivery in Rajkot on All Orders Above ₹999'));$announcementUrl=trim((string)($chromeSettings['top_bar_url']??'')); ?><?php if($announcementUrl!==''): ?><a href="<?= htmlspecialchars($announcementUrl,ENT_QUOTES) ?>"><?= $announcement ?></a><?php else: ?><?= $announcement ?><?php endif; ?>
         </span>
       </div>
 
@@ -75,11 +82,12 @@ foreach ($navProducts as $p) {
       </div>
     </div>
   </div>
+  <?php endif; ?>
 
   <nav class="navbar rcs-navbar" aria-label="Main navigation" data-design-target="header.navbar">
     <div class="header-container navbar-inner rcs-header-container rcs-navbar-inner">
       <a href="/" class="brand rcs-brand" aria-label="<?= $navBizName ?> Home">
-        <img src="/assets/images/rcs-graphic-logo.png"
+        <img src="<?= htmlspecialchars((string)($chromeSettings['header_logo'] ?? '/assets/images/rcs-graphic-logo.png'), ENT_QUOTES) ?>"
              alt="<?= $navBizName ?> Logo"
              class="brand-img rcs-brand-img" data-design-target="header.logo"
              loading="eager"
@@ -88,11 +96,11 @@ foreach ($navProducts as $p) {
 
       <div class="nav-center rcs-nav-center">
         <ul class="nav-menu rcs-nav-menu">
-          <li><a href="/" class="nav-link rcs-nav-link <?= $currentUri === '/' ? 'active' : '' ?>" data-design-target="header.nav_links">Home</a></li>
-          <li><a href="/about" class="nav-link rcs-nav-link <?= $currentUri === '/about' ? 'active' : '' ?>" data-design-target="header.nav_links">About</a></li>
-          <li class="nav-dropdown rcs-nav-dropdown" id="ddWrap">
+<?php if($headerHome): ?><li><a href="/" class="nav-link rcs-nav-link <?= $currentUri === '/' ? 'active' : '' ?>" data-design-target="header.nav_links"><?= htmlspecialchars((string)$headerHome['label']) ?></a></li><?php endif; ?>
+          <?php if($headerAbout): ?><li><a href="/about" class="nav-link rcs-nav-link <?= $currentUri === '/about' ? 'active' : '' ?>" data-design-target="header.nav_links"><?= htmlspecialchars((string)$headerAbout['label']) ?></a></li><?php endif; ?>
+          <?php if($headerProducts): ?><li class="nav-dropdown rcs-nav-dropdown" id="ddWrap">
             <button class="nav-link nav-link-button rcs-nav-link rcs-nav-link-button <?= $productsActive ? 'active' : '' ?>" data-design-target="header.nav_links" id="ddBtn" type="button" aria-expanded="false" aria-haspopup="true">
-              Products
+              <?= htmlspecialchars((string)($headerProducts['label']??'Products')) ?>
               <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
             </button>
             <div class="dd-bridge rcs-dd-bridge"></div>
@@ -143,18 +151,17 @@ foreach ($navProducts as $p) {
                 <span>See All Products</span>
               </a>
             </div>
-          </li>
-          <li><a href="/portfolio" class="nav-link rcs-nav-link <?= $currentUri === '/portfolio' ? 'active' : '' ?>" data-design-target="header.nav_links">Portfolio</a></li>
-          <li><a href="/blogs" class="nav-link rcs-nav-link <?= $currentUri === '/blogs' ? 'active' : '' ?>" data-design-target="header.nav_links">Blog</a></li>
-          <li><a href="/contact" class="nav-link rcs-nav-link <?= $currentUri === '/contact' ? 'active' : '' ?>" data-design-target="header.nav_links">Contact</a></li>
-          <li><a href="<?= ($user ?? null) ? '/profile' : '/login' ?>" class="nav-link rcs-nav-link <?= in_array($currentUri, ['/profile','/login'], true) ? 'active' : '' ?>" data-design-target="header.nav_links">My Account</a></li>
+          </li><?php endif; ?>
+          <?php foreach ($headerNavActive as $navItem): $href=(string)$navItem['url']; if(in_array($href,['/','/about','@products'],true))continue; ?>
+          <li><a href="<?= htmlspecialchars($href, ENT_QUOTES) ?>" class="nav-link rcs-nav-link <?= $currentUri === $href ? 'active' : '' ?>" data-design-target="header.nav_links"><?= htmlspecialchars((string)$navItem['label']) ?></a></li>
+          <?php endforeach; ?>
         </ul>
       </div>
 
       <div class="navbar-actions rcs-navbar-actions header-cta-actions">
-        <button class="header-cta-btn header-quote-btn" type="button" onclick="openCustomQuoteModal()"><i class="fa-solid fa-calculator" aria-hidden="true"></i><span>Get Custom Quote</span></button>
-        <a href="<?= ($user ?? null) ? '/profile#wishlist' : '/login?redirect=/profile%23wishlist' ?>" class="header-cta-btn header-fav-btn"><i class="fa-regular fa-heart" aria-hidden="true"></i><span>My Favorites</span></a>
-        <a href="<?= ($user ?? null) ? '/profile' : '/login' ?>" class="header-cta-btn header-login-btn"><i class="fa-regular fa-user" aria-hidden="true"></i><span><?= ($user ?? null) ? 'My Account' : 'Login / Signup' ?></span></a>
+        <button class="header-cta-btn header-quote-btn" type="button" onclick="openCustomQuoteModal()"><i class="fa-solid fa-calculator" aria-hidden="true"></i><span><?= htmlspecialchars((string)($chromeSettings['header_quote_text']??'Get Custom Quote')) ?></span></button>
+        <a href="<?= ($user ?? null) ? '/profile#wishlist' : '/login?redirect=/profile%23wishlist' ?>" class="header-cta-btn header-fav-btn"><i class="fa-regular fa-heart" aria-hidden="true"></i><span>My Wishlist</span></a>
+        <a href="<?= ($user ?? null) ? '/profile' : '/login' ?>" class="header-cta-btn header-login-btn" title="<?= htmlspecialchars(($user ?? null) ? (string)($user['name'] ?? 'My Account') : 'My Account') ?>"><i class="fa-regular fa-user" aria-hidden="true"></i><span><?= htmlspecialchars(($user ?? null) ? (string)($user['name'] ?? 'My Account') : 'My Account') ?></span></a>
         <a href="/cart" class="action-btn cart-btn rcs-action-btn rcs-cart-btn" aria-label="Cart">
           <i class="fa-solid fa-cart-shopping"></i>
           <span class="cart-badge rcs-cart-badge" id="cartCount">0</span>
@@ -172,12 +179,12 @@ foreach ($navProducts as $p) {
 ══════════════════════════════════════════════════ -->
 <div class="mob-drawer" id="mobDrawer">
   <div class="mob-drawer-inner">
-    <a href="/" class="md-item md-home">🏠 Home</a>
-    <a href="/about" class="md-item" onclick="closeDrawer()">⭐ About</a>
+    <?php if($headerHome): ?><a href="/" class="md-item md-home">🏠 <?= htmlspecialchars((string)$headerHome['label']) ?></a><?php endif; ?>
+    <?php if($headerAbout): ?><a href="/about" class="md-item" onclick="closeDrawer()">⭐ <?= htmlspecialchars((string)$headerAbout['label']) ?></a><?php endif; ?>
 
     <!-- Products accordion -->
-    <div class="md-item md-acc" onclick="toggleMobProds()" id="mobProdToggle">
-      <span>📦 Products</span>
+    <?php if($headerProducts): ?><div class="md-item md-acc" onclick="toggleMobProds()" id="mobProdToggle">
+      <span>📦 <?= htmlspecialchars((string)($headerProducts['label']??'Products')) ?></span>
       <svg class="md-acc-arrow" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
     </div>
     <div id="mobProdList" class="md-sub-list" style="display:none">
@@ -212,14 +219,15 @@ foreach ($navProducts as $p) {
       <a href="/categories" class="md-item md-sub md-all" onclick="closeDrawer()">
         → See All Products
       </a>
-    </div>
+    </div><?php endif; ?>
 
-    <a href="/portfolio" class="md-item" onclick="closeDrawer()">🖼️ Portfolio</a>
+    <?php foreach($headerNavActive as $navItem): $mobileHref=(string)$navItem['url'];if(in_array($mobileHref,['/','/about','@products'],true))continue; ?><a href="<?= htmlspecialchars($mobileHref,ENT_QUOTES) ?>" class="md-item" onclick="closeDrawer()">🔗 <?= htmlspecialchars((string)$navItem['label']) ?></a><?php endforeach; ?>
+    <!-- Legacy links retained only when no managed navigation exists. --><?php if(!$headerNavActive): ?><a href="/portfolio" class="md-item" onclick="closeDrawer()">🖼️ Portfolio</a>
     <a href="/blogs" class="md-item" onclick="closeDrawer()">📝 Blog</a>
-    <a href="/contact" class="md-item" onclick="closeDrawer()">📞 Contact</a>
+    <a href="/contact" class="md-item" onclick="closeDrawer()">📞 Contact</a><?php endif; ?>
     <button class="md-item md-action md-quote-action" type="button" onclick="openCustomQuoteModal();closeDrawer()">🧾 Get Custom Quote</button>
-    <a href="<?= ($user ?? null) ? '/profile#wishlist' : '/login?redirect=/profile%23wishlist' ?>" class="md-item" onclick="closeDrawer()">♡ My Favorites</a>
-    <a href="<?= ($user ?? null) ? '/profile' : '/login' ?>" class="md-item" onclick="closeDrawer()">👤 <?= ($user ?? null) ? 'My Account' : 'Login / Signup' ?></a>
+    <a href="<?= ($user ?? null) ? '/profile#wishlist' : '/login?redirect=/profile%23wishlist' ?>" class="md-item" onclick="closeDrawer()">♡ My Wishlist</a>
+    <a href="<?= ($user ?? null) ? '/profile' : '/login' ?>" class="md-item" onclick="closeDrawer()">👤 <?= htmlspecialchars(($user ?? null) ? (string)($user['name'] ?? 'My Account') : 'My Account') ?></a>
     <a href="/cart" class="md-item md-action" onclick="closeDrawer()">
       🛒 Cart <span class="md-cart-badge">0</span>
     </a>
@@ -302,7 +310,8 @@ async function submitCustomQuote(e){
     const res=await fetch('/api/custom-quotes',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin',body:JSON.stringify(payload)});
     const data=await res.json();
     if(!data.ok) throw new Error(data.msg||'Could not submit request');
-    msg.classList.add('success'); msg.textContent=data.msg||'Quotation request received.'; form.reset();
+    msg.classList.add('success'); msg.textContent='Quotation request sent successfully.'; form.reset();
+    window.setTimeout(closeCustomQuoteModal,5000);
   }catch(err){msg.classList.add('error'); msg.textContent=err.message||'Could not submit request';}
   finally{btn.disabled=false; btn.innerHTML='Request Quotation <span>→</span>';}
 }
