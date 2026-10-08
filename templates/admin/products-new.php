@@ -6,14 +6,12 @@ $editId = (int)($_GET['id'] ?? 0);
 ?>
 <div class="adm-pt"><?= $editId ? 'Edit Product' : 'Add Product' ?></div>
 
-<div class="fsec" style="max-width:960px">
+<div class="fsec product-editor-wide">
   <input type="hidden" id="ep-id" value="<?= $editId ?>">
 
-  <div class="f2">
+  <div class="product-editor-grid product-editor-grid-4">
     <div class="fg"><label>Product Name *</label><input class="fi" id="ep-name"></div>
     <div class="fg"><label>Category *</label><select class="fi fi-sel" id="ep-cat"></select></div>
-  </div>
-  <div class="f2">
     <div class="fg"><label>Product Code</label><input class="fi" id="ep-code" placeholder="Auto: PREFIX-001"></div>
     <div class="fg"><label>Code Prefix (from category)</label><input class="fi" id="ep-prefix" disabled></div>
   </div>
@@ -27,6 +25,11 @@ $editId = (int)($_GET['id'] ?? 0);
   <div class="fg"><label>Status</label><select class="fi fi-sel" id="ep-active"><option value="1">Active</option><option value="0">Inactive</option></select></div>
   <div class="fg"><label>Business / Sector Collections</label><div id="ep-business-needs" class="product-sector-picker"></div><div style="font-size:12px;color:var(--text3);margin-top:6px">Select sectors where this product should appear, e.g. Education, Healthcare, Retail.</div></div>
   <div class="fg"><label>Description</label><textarea class="fi" id="ep-desc" style="height:84px"></textarea></div>
+  <div class="fg"><label>YouTube Video URL</label><input class="fi" id="ep-video-url" placeholder="https://www.youtube.com/watch?v=..."></div>
+  <div class="f2">
+    <div class="fg"><label><input type="checkbox" id="ep-show-delivery" checked> Show delivery information</label><input class="fi" id="ep-delivery" value="Delivery in 3 - 5 Working Days"></div>
+    <div class="fg"><label><input type="checkbox" id="ep-show-free-delivery" checked> Show free-delivery information</label><input class="fi" id="ep-free-delivery" value="Free Delivery on Orders Above ₹999"></div>
+  </div>
   <div class="fg"><label>Specifications (Label: Value per line)</label><textarea class="fi" id="ep-specs" style="height:96px"></textarea></div>
 
   <div class="fg">
@@ -42,16 +45,9 @@ $editId = (int)($_GET['id'] ?? 0);
   </div>
 
   <div class="fg" style="margin-top:8px">
-    <label>Quantity Tier Pricing (Fixed: 1000 → 10000) *</label>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px">
-      <?php for ($q = 1000; $q <= 10000; $q += 1000): ?>
-      <div style="border:1px solid var(--border);border-radius:10px;padding:10px;background:#fff">
-        <div style="font-size:12px;color:var(--text2);margin-bottom:6px;font-weight:700"><?= number_format($q) ?> pcs</div>
-        <input type="number" min="0" step="0.01" class="fi tier-fixed" data-qty="<?= $q ?>" placeholder="Price for <?= number_format($q) ?>">
-      </div>
-      <?php endfor; ?>
-    </div>
-    <div style="font-size:12px;color:var(--text3);margin-top:6px">Leave blank to skip a quantity.</div>
+    <div class="product-tier-head"><label>Quantity Tier Pricing *</label><button class="btn btn-outline btn-sm" type="button" onclick="addTierRow()">＋ Add Quantity &amp; Price</button></div>
+    <div id="tierRows" class="product-tier-rows"></div>
+    <div style="font-size:12px;color:var(--text3);margin-top:6px">Add any required quantity and its total price. Existing storefront calculations remain unchanged.</div>
   </div>
 
   <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:16px">
@@ -110,14 +106,15 @@ function normalizeImage(img) {
 
 function collectFixedTiers() {
   const tiers = [];
-  document.querySelectorAll('.tier-fixed').forEach(input => {
-    const qty = parseInt(input.dataset.qty || '0', 10);
-    const price = parseFloat(input.value || '0');
+  document.querySelectorAll('.tier-row').forEach(row => {
+    const qty = parseInt(row.querySelector('[data-tier-qty]').value || '0', 10);
+    const price = parseFloat(row.querySelector('[data-tier-price]').value || '0');
     if (price > 0) tiers.push({quantity: qty, price});
   });
   if (!tiers.length) return {ok:false, msg:'Add at least one quantity price'};
   return {ok:true, tiers};
 }
+function addTierRow(tier={}){document.getElementById('tierRows').insertAdjacentHTML('beforeend',`<div class="tier-row"><label>Quantity<input type="number" min="1" step="1" class="fi" data-tier-qty value="${Number(tier.quantity||'')||''}" placeholder="e.g. 500"></label><label>Price (₹)<input type="number" min="0.01" step="0.01" class="fi" data-tier-price value="${Number(tier.price||'')||''}" placeholder="Total price"></label><button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.tier-row').remove()">Remove</button></div>`)}
 
 function renderProductFilters(selected = {}) {
   const box = document.getElementById('ep-filter-options');
@@ -186,8 +183,7 @@ async function boot() {
   document.getElementById('ep-images').addEventListener('change', e => {
     const files = [...(e.target.files || [])];
     if (!files.length) return;
-    pendingImages.forEach(img => { if (img.image_path?.startsWith('blob:')) URL.revokeObjectURL(img.image_path); });
-    pendingImages = files.map(f => ({image_path: URL.createObjectURL(f)}));
+    pendingImages.push(...files.map(f => ({image_path: URL.createObjectURL(f),file:f})));
     renderPreview();
   });
 
@@ -204,6 +200,11 @@ async function boot() {
   document.getElementById('ep-original-price').value = p.original_price || '';
   document.getElementById('ep-active').value = p.is_active ? '1' : '0';
   document.getElementById('ep-desc').value = p.description || '';
+  document.getElementById('ep-video-url').value = p.video_url || '';
+  document.getElementById('ep-show-delivery').checked = Number(p.show_delivery_info ?? 1) === 1;
+  document.getElementById('ep-delivery').value = p.delivery_info || 'Delivery in 3 - 5 Working Days';
+  document.getElementById('ep-show-free-delivery').checked = Number(p.show_free_delivery_info ?? 1) === 1;
+  document.getElementById('ep-free-delivery').value = p.free_delivery_info || 'Free Delivery on Orders Above ₹999';
   document.getElementById('ep-specs').value = (p.specs||[]).map(s=>`${s.label}: ${s.value||''}`).join('\n');
   renderProductFilters(p.filter_options || {});
   renderBusinessNeeds(p.business_need_ids || []);
@@ -213,12 +214,7 @@ async function boot() {
   renderPreview();
 
   const tiersRes = await fetch(`/admin/api/products/${id}/tiers`).then(r=>r.json());
-  const map = {};
-  (tiersRes.tiers || []).forEach(t => map[parseInt(t.quantity, 10)] = t.price);
-  document.querySelectorAll('.tier-fixed').forEach(input => {
-    const qty = parseInt(input.dataset.qty || '0', 10);
-    input.value = map[qty] ? String(map[qty]) : '';
-  });
+  document.getElementById('tierRows').innerHTML='';(tiersRes.tiers||[]).forEach(addTierRow);if(!(tiersRes.tiers||[]).length)addTierRow();
   await updateCatPrefixHint();
 }
 
@@ -249,7 +245,7 @@ function updateCodeHelp() {
   if (!codeInput || !help) return;
   const typed = codeInput.value.trim().toUpperCase();
   if (typed) {
-    help.textContent = 'Manual Product Code will be used as-is.';
+    help.textContent = /^\d+$/.test(typed) ? 'This number will be combined with the category prefix.' : 'Manual Product Code will be used as-is.';
     help.style.color = 'var(--blue)';
     return;
   }
@@ -329,6 +325,11 @@ async function saveProd() {
     category_id: catId,
     product_code: document.getElementById('ep-code').value.trim().toUpperCase(),
     description: document.getElementById('ep-desc').value.trim(),
+    video_url: document.getElementById('ep-video-url').value.trim(),
+    show_delivery_info: document.getElementById('ep-show-delivery').checked ? 1 : 0,
+    delivery_info: document.getElementById('ep-delivery').value.trim(),
+    show_free_delivery_info: document.getElementById('ep-show-free-delivery').checked ? 1 : 0,
+    free_delivery_info: document.getElementById('ep-free-delivery').value.trim(),
     design_fee: parseFloat(document.getElementById('ep-design-fee').value || '0') || 0,
     original_price: parseFloat(document.getElementById('ep-original-price').value || '0') || 0,
     is_active: parseInt(document.getElementById('ep-active').value || '1',10),
@@ -367,7 +368,7 @@ async function saveProd() {
     }).then(r=>r.json());
     if (!tr.ok) { toast(tr.msg || 'Tier save failed', 'error'); return; }
 
-    const files = [...(document.getElementById('ep-images').files || [])];
+    const files = pendingImages.map(item=>item.file).filter(Boolean);
     if (files.length) {
       const fd = new FormData();
       files.forEach(f => fd.append('images[]', f));
@@ -399,7 +400,7 @@ function toast(msg, type='info') {
   setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300);},3000);
 }
 
-boot();
+addTierRow();boot();
 </script>
     </div></div></div>
 </body></html>
