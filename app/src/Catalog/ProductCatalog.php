@@ -13,6 +13,34 @@ class ProductCatalog
     private static ?bool $hasCategoryCodePrefixColumn = null;
     private static ?bool $hasOriginalPriceColumn = null;
     private static bool $filterSchemaReady = false;
+    private static bool $presentationSchemaReady = false;
+
+    private static function ensurePresentationSchema(): void
+    {
+        if (self::$presentationSchemaReady) return;
+        foreach ([
+            "video_url VARCHAR(500) NULL",
+            "video_path VARCHAR(500) NULL",
+            "show_delivery_info TINYINT(1) NOT NULL DEFAULT 1",
+            "delivery_info VARCHAR(255) NULL DEFAULT 'Delivery in 3 - 5 Working Days'",
+            "show_free_delivery_info TINYINT(1) NOT NULL DEFAULT 1",
+            "free_delivery_info VARCHAR(255) NULL DEFAULT 'Free Delivery on Orders Above ₹999'",
+        ] as $definition) { try { \Database::query("ALTER TABLE products ADD COLUMN {$definition}"); } catch (\Throwable) {} }
+        self::$presentationSchemaReady=true;
+    }
+
+    private static function normalizeVideoUrl(string $url): string
+    {
+        $url=trim($url);if($url==='')return '';
+        return preg_match('~^https://(?:www\.)?(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/)([A-Za-z0-9_-]{11})(?:[&?].*)?$~i',$url,$m)?'https://www.youtube.com/embed/'.$m[1]:'';
+    }
+
+    private static function syncPresentation(int $id,array $data): void
+    {
+        self::ensurePresentationSchema();$videoPath=trim((string)($data['video_path']??''));
+        if($videoPath!==''&&!str_starts_with($videoPath,'/uploads/products/'))$videoPath='';
+        \Database::query("UPDATE products SET video_url=?,video_path=?,show_delivery_info=?,delivery_info=?,show_free_delivery_info=?,free_delivery_info=? WHERE id=?",[self::normalizeVideoUrl((string)($data['video_url']??'')),$videoPath,!empty($data['show_delivery_info'])?1:0,trim((string)($data['delivery_info']??'')),!empty($data['show_free_delivery_info'])?1:0,trim((string)($data['free_delivery_info']??'')),$id]);
+    }
 
     private static function minPriceExpr(): string
     {
@@ -581,6 +609,7 @@ class ProductCatalog
         $errors = [];
         if (empty($data['name'])) $errors[] = 'Name required';
         if (empty($data['category_id'])) $errors[] = 'Category required';
+        if(trim((string)($data['video_url']??''))!==''&&self::normalizeVideoUrl((string)$data['video_url'])==='')$errors[]='Enter a valid YouTube video URL';
         if ($errors) return ['ok' => false, 'msg' => implode(', ', $errors)];
 
         $slug = self::makeSlug($data['name'], $editId);
@@ -592,6 +621,7 @@ class ProductCatalog
                 self::syncSpecs($editId, $data['specs'] ?? []);
                 self::syncQuantityTiers($editId, $data['quantity_tiers'] ?? []);
                 self::syncProductFilters($editId, $data['filter_options'] ?? []);
+                self::syncPresentation($editId,$data);
                 \Orders\AdminAudit::log('product_updated', "Product #{$editId}: {$data['name']}");
                 return ['ok' => true, 'id' => $editId];
             }
@@ -601,6 +631,7 @@ class ProductCatalog
             self::syncSpecs((int)$id, $data['specs'] ?? []);
             self::syncQuantityTiers((int)$id, $data['quantity_tiers'] ?? []);
             self::syncProductFilters((int)$id, $data['filter_options'] ?? []);
+            self::syncPresentation((int)$id,$data);
             \Orders\AdminAudit::log('product_created', "Product #{$id}: {$data['name']}");
             return ['ok' => true, 'id' => (int)$id];
         } catch (\Throwable $e) {
