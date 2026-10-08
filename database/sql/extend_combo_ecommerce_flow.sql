@@ -1,0 +1,7 @@
+ALTER TABLE combo_offers MODIFY layout_slot ENUM('large','wide','square','square_3','square_4') NOT NULL DEFAULT 'square_3';
+ALTER TABLE combo_offers ADD COLUMN show_title_home TINYINT(1) NOT NULL DEFAULT 1, ADD COLUMN show_title_detail TINYINT(1) NOT NULL DEFAULT 1, ADD COLUMN show_badge_home TINYINT(1) NOT NULL DEFAULT 1, ADD COLUMN show_badge_detail TINYINT(1) NOT NULL DEFAULT 1, ADD COLUMN show_cta_home TINYINT(1) NOT NULL DEFAULT 1, ADD COLUMN show_cta_detail TINYINT(1) NOT NULL DEFAULT 1, ADD COLUMN show_short_description_home TINYINT(1) NOT NULL DEFAULT 1, ADD COLUMN show_short_description_detail TINYINT(1) NOT NULL DEFAULT 1, ADD COLUMN show_description_home TINYINT(1) NOT NULL DEFAULT 1, ADD COLUMN show_description_detail TINYINT(1) NOT NULL DEFAULT 1;
+UPDATE combo_offers SET show_title_home=show_title,show_title_detail=show_title,show_badge_home=show_badge,show_badge_detail=show_badge,show_cta_home=show_cta,show_cta_detail=show_cta,show_short_description_home=show_short_description,show_short_description_detail=show_short_description,show_description_home=show_description,show_description_detail=show_description;
+UPDATE combo_offers SET layout_slot='square_3' WHERE layout_slot='square';
+ALTER TABLE combo_offer_custom_items ADD COLUMN description TEXT NULL AFTER thumbnail_path;
+ALTER TABLE order_items ADD COLUMN combo_offer_id INT UNSIGNED NULL AFTER custom_product_image;
+CREATE INDEX idx_order_items_combo_offer ON order_items (combo_offer_id);

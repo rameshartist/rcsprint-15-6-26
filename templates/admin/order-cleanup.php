@@ -66,9 +66,16 @@ $h = static fn($v) => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 
   <form class="oc-confirm-card" method="post" action="/admin/order-cleanup/delete-all" onsubmit="return confirm('This will delete all testing orders and related records. Continue?')">
     <input type="hidden" name="_token" value="<?= $h($csrf ?? '') ?>">
+    <div class="oc-filter-grid">
+      <label class="oc-field"><span>Delete Scope</span><select class="fi" name="scope"><option value="all">All Orders</option><option value="filtered">Only Matching Orders</option></select></label>
+      <label class="oc-field"><span>Order Status</span><select class="fi" name="status"><option value="">Any status</option><?php foreach(['new_order','received','design_approved','printing','other_process','ready','delivered','cancelled'] as $status):?><option value="<?= $h($status) ?>"><?= $h(ucwords(str_replace('_',' ',$status))) ?></option><?php endforeach;?></select></label>
+      <label class="oc-field"><span>Payment Status</span><select class="fi" name="payment_status"><option value="">Any payment status</option><option value="pending">Pending</option><option value="paid">Paid</option><option value="failed">Failed</option></select></label>
+      <label class="oc-field"><span>Order Type</span><select class="fi" name="order_type"><option value="">Any order type</option><option value="normal">Regular</option><option value="combo_offer">Combo Offer</option><option value="custom">Custom Order</option></select></label>
+      <label class="oc-field"><span>Order ID / Customer Detail</span><input class="fi" name="search" placeholder="Order ID, name, email or mobile"></label>
+    </div>
     <label class="oc-check"><input type="checkbox" name="archive_files" value="1" checked> Move linked uploaded artwork/proof files to <code>/uploads/.trash/order-cleanup/</code></label>
     <label class="oc-field"><span>Type <b>DELETE ALL ORDERS</b> to confirm</span><input type="text" name="confirm_text" placeholder="DELETE ALL ORDERS" autocomplete="off" required></label>
-    <button class="oc-delete-btn" type="submit" <?= ((int)($counts['orders'] ?? 0) <= 0) ? 'disabled' : '' ?>>Delete All Testing Orders</button>
+    <button class="oc-delete-btn" type="submit" <?= ((int)($counts['orders'] ?? 0) <= 0) ? 'disabled' : '' ?>>Delete Selected Orders</button>
     <p class="oc-note">Tip: take a backup before cleanup. This tool is visible only to Super Admin users.</p>
   </form>
 </div>
