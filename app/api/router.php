@@ -16,6 +16,9 @@ if (in_array($method, ['POST', 'PUT', 'PATCH'])) {
     $raw = file_get_contents('php://input');
     $body = json_decode($raw, true) ?? $_POST;
 }
+$ensureUserAddresses = static function (): void {
+    Database::query("CREATE TABLE IF NOT EXISTS user_addresses (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id INT UNSIGNED NOT NULL,label VARCHAR(80) NOT NULL DEFAULT 'Address',business_name VARCHAR(180) NULL,address_line1 VARCHAR(255) NOT NULL,address_line2 VARCHAR(255) NULL,city VARCHAR(120) NOT NULL,state VARCHAR(120) NOT NULL,pincode VARCHAR(20) NOT NULL,is_default TINYINT(1) NOT NULL DEFAULT 0,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,KEY idx_user_addresses_user (user_id,is_default,id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+};
 
 // ── Auth ──────────────────────────────────────────────────────
 
@@ -58,7 +61,23 @@ if ($uri === '/api/profile' && $method === 'GET') {
     \Auth\Auth::require();
     $user = \Auth\Auth::user();
     $profile = \Auth\Auth::getProfile((int)$user['id']);
+    try { $ensureUserAddresses(); $profile['addresses'] = Database::rows("SELECT * FROM user_addresses WHERE user_id=? ORDER BY is_default DESC,id DESC", [(int)$user['id']]); } catch (\Throwable) { $profile['addresses'] = []; }
     json(['ok' => true, 'profile' => $profile]);
+}
+
+if ($uri === '/api/profile/addresses' && $method === 'POST') {
+    \Auth\Auth::require(); $user=\Auth\Auth::user(); $ensureUserAddresses();
+    foreach (['address_line1','city','state','pincode'] as $key) if (trim((string)($body[$key]??''))==='') json(['ok'=>false,'msg'=>'Please complete all required address fields.'],422);
+    $isDefault=!empty($body['is_default']); if($isDefault) Database::query("UPDATE user_addresses SET is_default=0 WHERE user_id=?",[(int)$user['id']]);
+    $id=Database::insert("INSERT INTO user_addresses (user_id,label,business_name,address_line1,address_line2,city,state,pincode,is_default,created_at) VALUES (?,?,?,?,?,?,?,?,?,NOW())",[
+        (int)$user['id'], trim((string)($body['label']??'Address'))?:'Address', trim((string)($body['business_name']??'')),
+        trim((string)$body['address_line1']), trim((string)($body['address_line2']??'')), trim((string)$body['city']),
+        trim((string)$body['state']), trim((string)$body['pincode']), $isDefault?1:0
+    ]);
+    json(['ok'=>true,'id'=>(int)$id]);
+}
+if (preg_match('#^/api/profile/addresses/(\d+)$#',$uri,$m) && $method==='DELETE') {
+    \Auth\Auth::require(); $user=\Auth\Auth::user(); $ensureUserAddresses(); Database::query("DELETE FROM user_addresses WHERE id=? AND user_id=?",[(int)$m[1],(int)$user['id']]); json(['ok'=>true]);
 }
 
 if ($uri === '/api/profile' && in_array($method, ['POST', 'PUT'], true)) {
@@ -117,6 +136,7 @@ if (preg_match('#^/api/design-approvals/(\d+)/artwork$#', $uri, $m) && $method =
     if (empty($_FILES['artwork'])) json(['ok' => false, 'msg' => 'No file uploaded'], 400);
 
     $file = $_FILES['artwork'];
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) json(['ok'=>false,'msg'=>'The upload did not complete. Please retry.'],400);
     $maxMb = (int)Database::setting('upload_max_mb', env('UPLOAD_MAX_SIZE_MB', '50'));
     $maxSize = $maxMb * 1024 * 1024;
     $allowed = array_map('trim', explode(',', Database::setting('upload_allowed_ext', 'pdf,ai,eps,png,jpg,jpeg,psd,cdr')));
@@ -174,6 +194,7 @@ if (preg_match('#^/api/design-approvals/(\d+)/artwork$#', $uri, $m) && $method =
         'note' => $canInitialUpload ? 'Customer uploaded artwork after selecting upload later.' : 'Customer reuploaded artwork.',
     ]);
     \Orders\OrderManager::markCustomerUpdate((int)$approval['order_id'], $canInitialUpload ? 'customer_artwork_uploaded' : 'customer_artwork_reuploaded');
+    \Orders\OrderManager::clearAdminUpdate((int)$approval['order_id']);
     \Orders\OrderManager::syncOrderDesignApproved((int)$approval['order_id']);
     json([
         'ok' => true,
@@ -189,6 +210,59 @@ if (preg_match('#^/api/design-approvals/(\d+)/artwork$#', $uri, $m) && $method =
             'download_url' => '/account/artwork/' . (int)$fileId . '/download',
         ],
     ]);
+}
+
+if (preg_match('#^/api/orders/(\d+)/admin-update/ack$#', $uri, $m) && $method === 'POST') {
+    \Auth\Auth::require();
+    $user = \Auth\Auth::user();
+    $order = Database::row("SELECT id, admin_update_type FROM orders WHERE id=? AND user_id=? LIMIT 1", [(int)$m[1], (int)$user['id']]);
+    if (!$order) json(['ok' => false, 'msg' => 'Order not found.'], 404);
+    if (in_array((string)($order['admin_update_type'] ?? ''), ['order_status_updated', 'admin_design_approved', 'invoice_uploaded', 'shipping_updated'], true)) \Orders\OrderManager::clearAdminUpdate((int)$order['id']);
+    json(['ok' => true]);
+}
+
+if (preg_match('#^/api/orders/(\d+)/cancel$#', $uri, $m) && $method === 'POST') {
+    \Auth\Auth::require();
+    $user = \Auth\Auth::user();
+    $db = Database::get();
+    try {
+        $db->beginTransaction();
+        $order = Database::row("SELECT id, status FROM orders WHERE id=? AND user_id=? FOR UPDATE", [(int)$m[1], (int)$user['id']]);
+        if (!$order) { $db->rollBack(); json(['ok'=>false,'msg'=>'Order not found.'], 404); }
+        $allowed = ['new_order','received','whatsapp_pending','design_approved'];
+        if (!in_array((string)$order['status'], $allowed, true)) { $db->rollBack(); json(['ok'=>false,'msg'=>'This order can no longer be cancelled because printing or processing has started.'], 422); }
+        $reason = trim((string)($body['reason'] ?? '')) ?: 'Cancelled by customer.';
+        Database::query("UPDATE orders SET status='cancelled', customer_update_pending=1, customer_update_type='customer_cancelled', customer_update_at=NOW(), updated_at=NOW() WHERE id=?", [(int)$order['id']]);
+        Database::insert("INSERT INTO order_status_history (order_id,status,note,created_by,created_at) VALUES (?,'cancelled',?,'customer',NOW())", [(int)$order['id'], $reason]);
+        $db->commit();
+        json(['ok'=>true,'status'=>'cancelled','msg'=>'Order cancelled successfully.']);
+    } catch (\Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        json(['ok'=>false,'msg'=>'Could not cancel this order. Please try again.'], 500);
+    }
+}
+
+if (preg_match('#^/api/orders/(\d+)/refund-request$#', $uri, $m) && $method === 'POST') {
+    \Auth\Auth::require();
+    \Orders\OrderManager::ensureCustomerUpdateSchema();
+    $user = \Auth\Auth::user();
+    $db = Database::get();
+    try {
+        $db->beginTransaction();
+        $order = Database::row("SELECT id,status,payment_status,refund_requested_at FROM orders WHERE id=? AND user_id=? FOR UPDATE", [(int)$m[1], (int)$user['id']]);
+        if (!$order) { $db->rollBack(); json(['ok'=>false,'msg'=>'Order not found.'], 404); }
+        if ((string)$order['status'] !== 'cancelled') { $db->rollBack(); json(['ok'=>false,'msg'=>'Refund can be requested only after the order is cancelled.'], 422); }
+        if ((string)$order['payment_status'] !== 'paid') { $db->rollBack(); json(['ok'=>false,'msg'=>'This order has no captured online payment to refund.'], 422); }
+        if (!empty($order['refund_requested_at'])) { $db->rollBack(); json(['ok'=>false,'msg'=>'Refund request is already pending.'], 409); }
+        $note = trim((string)($body['note'] ?? '')) ?: 'Refund requested by customer.';
+        Database::query("UPDATE orders SET refund_requested_at=NOW(),refund_request_note=?,customer_update_pending=1,customer_update_type='customer_refund_requested',customer_update_at=NOW(),updated_at=NOW() WHERE id=?", [$note,(int)$order['id']]);
+        Database::insert("INSERT INTO order_status_history (order_id,status,note,created_by,created_at) VALUES (?,'cancelled',?,'customer',NOW())", [(int)$order['id'],$note]);
+        $db->commit();
+        json(['ok'=>true,'msg'=>'Refund request submitted successfully.']);
+    } catch (\Throwable $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        json(['ok'=>false,'msg'=>'Could not submit refund request. Please try again.'],500);
+    }
 }
 
 
@@ -209,6 +283,7 @@ if ($uri === '/api/custom-quotes' && $method === 'POST') {
             status VARCHAR(40) NOT NULL DEFAULT 'new',
             admin_notes TEXT NULL,
             quoted_amount DECIMAL(12,2) NULL,
+            design_fee DECIMAL(12,2) NOT NULL DEFAULT 0,
             currency VARCHAR(10) NOT NULL DEFAULT 'INR',
             source_page VARCHAR(255) NULL,
             ip_address VARCHAR(64) NULL,
@@ -221,6 +296,10 @@ if ($uri === '/api/custom-quotes' && $method === 'POST') {
             sent_at DATETIME NULL,
             payment_link_generated_at DATETIME NULL,
             approved_at DATETIME NULL,
+            is_seen TINYINT(1) NOT NULL DEFAULT 0,
+            customer_update_pending TINYINT(1) NOT NULL DEFAULT 0,
+            customer_update_type VARCHAR(80) NULL,
+            customer_update_at DATETIME NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
             KEY idx_custom_quote_status (status, created_at),
@@ -230,6 +309,7 @@ if ($uri === '/api/custom-quotes' && $method === 'POST') {
         foreach ([
             "ALTER TABLE custom_quote_requests ADD COLUMN admin_notes TEXT NULL AFTER status",
             "ALTER TABLE custom_quote_requests ADD COLUMN quoted_amount DECIMAL(12,2) NULL AFTER admin_notes",
+            "ALTER TABLE custom_quote_requests ADD COLUMN design_fee DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER quoted_amount",
             "ALTER TABLE custom_quote_requests ADD COLUMN currency VARCHAR(10) NOT NULL DEFAULT 'INR' AFTER quoted_amount",
             "ALTER TABLE custom_quote_requests ADD COLUMN order_id INT UNSIGNED NULL AFTER user_agent",
             "ALTER TABLE custom_quote_requests ADD COLUMN customer_type VARCHAR(30) NOT NULL DEFAULT 'guest' AFTER order_id",
@@ -239,6 +319,10 @@ if ($uri === '/api/custom-quotes' && $method === 'POST') {
             "ALTER TABLE custom_quote_requests ADD COLUMN sent_at DATETIME NULL AFTER payment_status",
             "ALTER TABLE custom_quote_requests ADD COLUMN payment_link_generated_at DATETIME NULL AFTER sent_at",
             "ALTER TABLE custom_quote_requests ADD COLUMN approved_at DATETIME NULL AFTER payment_link_generated_at",
+            "ALTER TABLE custom_quote_requests ADD COLUMN is_seen TINYINT(1) NOT NULL DEFAULT 0 AFTER approved_at",
+            "ALTER TABLE custom_quote_requests ADD COLUMN customer_update_pending TINYINT(1) NOT NULL DEFAULT 0 AFTER is_seen",
+            "ALTER TABLE custom_quote_requests ADD COLUMN customer_update_type VARCHAR(80) NULL AFTER customer_update_pending",
+            "ALTER TABLE custom_quote_requests ADD COLUMN customer_update_at DATETIME NULL AFTER customer_update_type",
         ] as $sql) { try { Database::query($sql); } catch (\Throwable) {} }
         try { Database::query("ALTER TABLE custom_quote_requests DROP COLUMN estimated_delivery"); } catch (\Throwable) {}
     } catch (\Throwable $e) {
@@ -289,7 +373,7 @@ if ($uri === '/api/custom-quotes' && $method === 'POST') {
                 substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255),
             ]
         );
-        $code = 'CQ-' . str_pad((string)(int)$id, 4, '0', STR_PAD_LEFT);
+        $code = \Documents\DocumentNumberManager::next('quote');
         Database::query("UPDATE custom_quote_requests SET request_code=? WHERE id=?", [$code, (int)$id]);
         json(['ok' => true, 'id' => (int)$id, 'request_code' => $code, 'customer_type' => $customerType, 'msg' => $customerType === 'registered' ? 'Quotation request received and linked to your account.' : 'Quotation request received. Create/login to an account later to track and pay.']);
     } catch (\Throwable $e) {
@@ -373,6 +457,9 @@ if ($uri === '/api/cart/add' && $method === 'POST') {
     $result = \Cart\Cart::add($body);
     json($result);
 }
+if ($uri === '/api/cart/combo' && $method === 'POST') {
+    json(\Cart\Cart::addComboOffer((int)($body['combo_offer_id'] ?? 0), $body));
+}
 
 if (preg_match('#^/api/cart/remove/(.+)$#', $uri, $m) && $method === 'DELETE') {
     json(\Cart\Cart::remove($m[1]));
@@ -405,6 +492,7 @@ if ($uri === '/api/upload/artwork' && $method === 'POST') {
     }
 
     $file    = $_FILES['artwork'];
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) json(['ok'=>false,'msg'=>'The upload did not complete. Please retry.'],400);
     $maxMb   = (int)Database::setting('upload_max_mb', env('UPLOAD_MAX_SIZE_MB', '50'));
     $maxSize = $maxMb * 1024 * 1024;
     $allowed = explode(',', Database::setting('upload_allowed_ext', 'pdf,ai,eps,png,jpg,jpeg,psd,cdr'));
@@ -495,12 +583,28 @@ if ($uri === '/api/orders' && $method === 'GET') {
 
 // ── Razorpay ──────────────────────────────────────────────────
 
+if (preg_match('#^/api/orders/(\d+)/payment/create$#',$uri,$m) && $method==='POST') {
+    \Auth\Auth::require();\Auth\Auth::verifyCsrf();$user=\Auth\Auth::user();$order=Database::row("SELECT * FROM orders WHERE id=? AND user_id=? LIMIT 1",[(int)$m[1],(int)$user['id']]);
+    if(!$order)json(['ok'=>false,'msg'=>'Order not found.'],404);if(($order['payment_status']??'')==='paid')json(['ok'=>false,'msg'=>'This order is already paid.'],409);
+    $result=\Payment\Razorpay::createOrder((float)$order['total_amount'],'order_'.$order['order_id'],['internal_order_id'=>(string)$order['id'],'customer_name'=>$order['customer_name']]);
+    if($result['ok']??false)Database::query("UPDATE orders SET razorpay_order_id=?,updated_at=NOW() WHERE id=?",[$result['razorpay_order_id'],(int)$order['id']]);json($result,($result['ok']??false)?200:422);
+}
+if (preg_match('#^/api/orders/(\d+)/payment/verify$#',$uri,$m) && $method==='POST') {
+    \Auth\Auth::require();\Auth\Auth::verifyCsrf();$user=\Auth\Auth::user();$order=Database::row("SELECT * FROM orders WHERE id=? AND user_id=? LIMIT 1",[(int)$m[1],(int)$user['id']]);if(!$order)json(['ok'=>false,'msg'=>'Order not found.'],404);
+    $razorOrder=trim((string)($body['razorpay_order_id']??''));if($razorOrder===''||!hash_equals((string)($order['razorpay_order_id']??''),$razorOrder))json(['ok'=>false,'msg'=>'Payment session does not match this order.'],422);
+    $result=\Payment\Razorpay::handleSuccess((int)$order['id'],$razorOrder,trim((string)($body['razorpay_payment_id']??'')),trim((string)($body['razorpay_signature']??'')));json($result,($result['ok']??false)?200:422);
+}
+
 if ($uri === '/api/payment/create-order' && $method === 'POST') {
     $ensure = \Auth\Auth::ensureCheckoutUser($body['customer'] ?? []);
     if (!$ensure['ok']) json($ensure, 400);
     $items  = \Cart\Cart::get();
-    $customQuoteId=(int)($body['custom_quote_id'] ?? 0); if($customQuoteId)$items=array_values(array_filter($items,static fn($item)=>(int)($item['custom_quote_id']??0)===$customQuoteId));
-    $coupon = $body['coupon_code'] ?? null;
+    if (array_filter($items, static fn($item) => !empty($item['combo_unavailable']))) json(['ok'=>false,'msg'=>'A Combo Offer in your cart is no longer available. Please remove it and try again.'],422);
+    if (!$items) json(['ok'=>false,'msg'=>'Your cart is empty.'],422);
+    $storage = \Orders\OrderManager::validateCheckoutStorage($items);
+    if (!($storage['ok'] ?? false)) json($storage, 503);
+    $hasCustomQuote = (bool)array_filter($items, static fn($item) => (int)($item['custom_quote_id'] ?? 0) > 0);
+    $coupon = $hasCustomQuote ? null : ($body['coupon_code'] ?? null);
     $totals = \Cart\Cart::totals($items, $coupon);
 
     if ($totals['total'] <= 0) json(['ok' => false, 'msg' => 'Invalid order total']);
@@ -525,6 +629,9 @@ if ($uri === '/api/payment/verify' && $method === 'POST') {
     if ($razorpayOrderId === '' || $razorpayPaymentId === '' || $razorpaySignature === '') {
         json(['ok' => false, 'msg' => 'Missing payment verification fields'], 422);
     }
+    if (!\Payment\Razorpay::verifyPayment($razorpayOrderId,$razorpayPaymentId,$razorpaySignature)) {
+        json(['ok'=>false,'msg'=>'Payment verification failed.'],400);
+    }
 
     // Idempotency: if this payment ID is already recorded, return existing order directly.
     $existingOrder = \Payment\Razorpay::findOrderByPaymentId($razorpayPaymentId);
@@ -534,12 +641,12 @@ if ($uri === '/api/payment/verify' && $method === 'POST') {
 
     // 1) Place order first (records in DB)
     $placeResult = \Orders\OrderManager::place([
-        'coupon_code'    => $body['coupon_code'] ?? null,
+        'coupon_code'    => (bool)array_filter(\Cart\Cart::get(), static fn($item) => (int)($item['custom_quote_id'] ?? 0) > 0) ? null : ($body['coupon_code'] ?? null),
         'payment_method' => 'razorpay',
         'payment_status' => 'pending',
         'billing'        => $body['billing'] ?? null,
         'shipping'       => $body['shipping'] ?? null,
-        'custom_quote_id' => (int)($body['custom_quote_id'] ?? 0),
+        'checkout_group_id' => $razorpayOrderId,
     ]);
 
     if (!$placeResult['ok']) json($placeResult);
@@ -574,10 +681,7 @@ if ($uri === '/api/orders/whatsapp' && $method === 'POST') {
         'shipping'       => $body['shipping'] ?? null,
     ]);
 
-    if ($result['ok']) {
-        // Update status to whatsapp_pending
-        \Orders\OrderManager::updateStatus($result['order']['id'], 'whatsapp_pending', 'Placed via WhatsApp');
-    }
+    if ($result['ok']) foreach(($result['orders']??[$result['order']]) as $placedOrder) \Orders\OrderManager::updateStatus((int)$placedOrder['id'], 'whatsapp_pending', 'Placed via WhatsApp');
 
     json($result);
 }

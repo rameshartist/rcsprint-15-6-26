@@ -27,6 +27,11 @@ $editId = (int)($_GET['id'] ?? 0);
   <div class="fg"><label>Status</label><select class="fi fi-sel" id="ep-active"><option value="1">Active</option><option value="0">Inactive</option></select></div>
   <div class="fg"><label>Business / Sector Collections</label><div id="ep-business-needs" class="product-sector-picker"></div><div style="font-size:12px;color:var(--text3);margin-top:6px">Select sectors where this product should appear, e.g. Education, Healthcare, Retail.</div></div>
   <div class="fg"><label>Description</label><textarea class="fi" id="ep-desc" style="height:84px"></textarea></div>
+  <div class="fg"><label>YouTube Video URL</label><input class="fi" id="ep-video-url" placeholder="https://www.youtube.com/watch?v=..."></div>
+  <div class="f2">
+    <div class="fg"><label><input type="checkbox" id="ep-show-delivery" checked> Show delivery information</label><input class="fi" id="ep-delivery" value="Delivery in 3 - 5 Working Days"></div>
+    <div class="fg"><label><input type="checkbox" id="ep-show-free-delivery" checked> Show free-delivery information</label><input class="fi" id="ep-free-delivery" value="Free Delivery on Orders Above ₹999"></div>
+  </div>
   <div class="fg"><label>Specifications (Label: Value per line)</label><textarea class="fi" id="ep-specs" style="height:96px"></textarea></div>
 
   <div class="fg">
@@ -204,6 +209,11 @@ async function boot() {
   document.getElementById('ep-original-price').value = p.original_price || '';
   document.getElementById('ep-active').value = p.is_active ? '1' : '0';
   document.getElementById('ep-desc').value = p.description || '';
+  document.getElementById('ep-video-url').value = p.video_url || '';
+  document.getElementById('ep-show-delivery').checked = Number(p.show_delivery_info ?? 1) === 1;
+  document.getElementById('ep-delivery').value = p.delivery_info || 'Delivery in 3 - 5 Working Days';
+  document.getElementById('ep-show-free-delivery').checked = Number(p.show_free_delivery_info ?? 1) === 1;
+  document.getElementById('ep-free-delivery').value = p.free_delivery_info || 'Free Delivery on Orders Above ₹999';
   document.getElementById('ep-specs').value = (p.specs||[]).map(s=>`${s.label}: ${s.value||''}`).join('\n');
   renderProductFilters(p.filter_options || {});
   renderBusinessNeeds(p.business_need_ids || []);
@@ -329,6 +339,11 @@ async function saveProd() {
     category_id: catId,
     product_code: document.getElementById('ep-code').value.trim().toUpperCase(),
     description: document.getElementById('ep-desc').value.trim(),
+    video_url: document.getElementById('ep-video-url').value.trim(),
+    show_delivery_info: document.getElementById('ep-show-delivery').checked ? 1 : 0,
+    delivery_info: document.getElementById('ep-delivery').value.trim(),
+    show_free_delivery_info: document.getElementById('ep-show-free-delivery').checked ? 1 : 0,
+    free_delivery_info: document.getElementById('ep-free-delivery').value.trim(),
     design_fee: parseFloat(document.getElementById('ep-design-fee').value || '0') || 0,
     original_price: parseFloat(document.getElementById('ep-original-price').value || '0') || 0,
     is_active: parseInt(document.getElementById('ep-active').value || '1',10),
