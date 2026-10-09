@@ -1,6 +1,7 @@
 <?php
 $pageTitle = 'My Account — RCS Graphic';
 $currentPage = 'profile';
+$loadRazorpay = true;
 include INCLUDE_PATH . '/partials/head.php';
 include INCLUDE_PATH . '/partials/header.php';
 
@@ -19,6 +20,9 @@ $profile = $profile ?? [];
 $billing = $profile['billing'] ?? [];
 $shipping = $profile['shipping'] ?? [];
 $orders = is_array($orders ?? null) ? $orders : [];
+$customOrders = is_array($customOrders ?? null) ? $customOrders : [];
+$customFulfillmentOrders = is_array($customFulfillmentOrders ?? null) ? $customFulfillmentOrders : [];
+$savedAddresses = is_array($savedAddresses ?? null) ? $savedAddresses : [];
 $reviewableItems = is_array($reviewableItems ?? null) ? $reviewableItems : [];
 $myReviews = is_array($myReviews ?? null) ? $myReviews : [];
 $wishlistItems = is_array($wishlistItems ?? null) ? $wishlistItems : [];
@@ -36,7 +40,7 @@ $locationParts = array_filter([$city, $state, $pincode]);
 $location = $locationParts ? implode(', ', $locationParts) : 'Add your default address';
 $initials = strtoupper(substr(trim($name), 0, 1) ?: 'R');
 $hasSavedAddress = trim((string)($shipping['address_line1'] ?? '')) !== '' || trim((string)($billing['address_line1'] ?? '')) !== '';
-$savedAddressCount = $hasSavedAddress ? 1 : 0;
+$savedAddressCount = count($savedAddresses) ?: ($hasSavedAddress ? 1 : 0);
 
 $statusLabels = [
     'new_order' => 'New Order',
@@ -49,13 +53,63 @@ $statusLabels = [
     'delivered' => 'Delivered',
     'cancelled' => 'Cancelled',
     'whatsapp_pending' => 'Pending',
+    'new' => 'Request Received',
+    'reviewing' => 'Under Review',
+    'quoted' => 'Quote Ready',
+    'sent_to_customer' => 'Quote Sent',
+    'customer_approved' => 'Approved',
+    'payment_pending' => 'Payment Pending',
+    'converted_to_order' => 'Paid',
+    'rejected' => 'Rejected',
+    'closed' => 'Closed',
 ];
 $designApprovalLabels = ['pending_review'=>'Pending Review','issue_found'=>'Issue Found','proof_uploaded'=>'Waiting for Your Approval','revision_requested'=>'Revision Requested','approved'=>'Approved'];
+$avatarPath=trim((string)($profile['avatar_path']??$user['avatar_path']??''));
 $progressStatuses = ['new_order', 'received', 'design_approved', 'printing', 'other_process', 'processing', 'ready', 'whatsapp_pending'];
 $totalOrders = count($orders);
 $progressOrders = count(array_filter($orders, static fn($order) => in_array((string)($order['status'] ?? ''), $progressStatuses, true)));
 $completedOrders = count(array_filter($orders, static fn($order) => (string)($order['status'] ?? '') === 'delivered'));
 $recentOrders = array_slice($orders, 0, 4);
+
+// Combine custom quote and fulfillment records into one customer-facing list.
+// Paid custom orders stay in the production orders table, but are presented only in My Custom Orders.
+$customOrdersByQuote = [];
+foreach ($customFulfillmentOrders as $customOrder) {
+    $quoteId = (int)($customOrder['custom_quote_id'] ?? 0);
+    if ($quoteId > 0) $customOrdersByQuote[$quoteId] = $customOrder;
+}
+$customOrderDisplay = [];
+foreach ($customOrders as $quote) {
+    $quoteId = (int)($quote['id'] ?? 0);
+    if (isset($customOrdersByQuote[$quoteId])) {
+        $customOrder = $customOrdersByQuote[$quoteId];
+        $customOrder['custom_request'] = $quote;
+        $customOrderDisplay[] = $customOrder;
+        unset($customOrdersByQuote[$quoteId]);
+        continue;
+    }
+    $customOrderDisplay[] = [
+        'order_id' => (string)($quote['request_code'] ?? ('CQ-' . $quoteId)),
+        'created_at' => $quote['created_at'] ?? null,
+        'total_amount' => (float)($quote['quoted_amount'] ?? 0),
+        'payment_status' => (string)($quote['payment_status'] ?? 'not_required'),
+        'payment_method' => '',
+        'status' => (string)($quote['status'] ?? 'new'),
+        'quote_token' => (string)($quote['quote_token'] ?? ''),
+        'is_quote_only' => true,
+        'custom_request' => $quote,
+        'items' => [[
+            'product_name' => (string)($quote['product_name'] ?? 'Custom Product'),
+            'quantity' => (int)($quote['quantity'] ?? 1),
+            'custom_quantity' => (string)($quote['quantity'] ?? ''),
+            'product_image' => (string)($quote['product_image'] ?? ''),
+            'quality_name' => (string)($quote['material_type'] ?? 'Custom specification'),
+            'custom_size_dimension' => (string)($quote['size_dimension'] ?? ''),
+        ]],
+    ];
+}
+foreach ($customOrdersByQuote as $customOrder) $customOrderDisplay[] = $customOrder;
+usort($customOrderDisplay, static fn(array $a, array $b): int => strcmp((string)($b['created_at'] ?? ''), (string)($a['created_at'] ?? '')));
 $accountSettings = is_array($settingsMap ?? null) ? $settingsMap : [];
 if ($accountSettings === []) {
     try {
@@ -93,13 +147,13 @@ $accountIsImageFile = static function (?string $mime, ?string $name, ?string $pa
     return str_starts_with($mime, 'image/') || in_array($ext, ['jpg','jpeg','png','gif','webp','svg'], true);
 };
 
-$renderOrders = static function (array $list, bool $compact = false) use ($h, $statusLabels, $designApprovalLabels, $accountShortFileName, $accountNormalizeAssetPath, $accountIsImageFile): void {
+$renderOrders = static function (array $list, bool $compact = false, bool $custom = false) use ($h, $statusLabels, $designApprovalLabels, $accountShortFileName, $accountNormalizeAssetPath, $accountIsImageFile): void {
     if (empty($list)) {
         ?>
         <div class="account-empty-state">
           <i class="fa-solid fa-box-open"></i>
           <strong>No orders yet</strong>
-          <span>Your print orders will appear here after checkout.</span>
+          <span><?= $custom ? 'Your custom quotes and orders will appear here.' : 'Your print orders will appear here after checkout.' ?></span>
           <a href="/categories" class="btn btn-blue btn-sm">Browse Products</a>
         </div>
         <?php
@@ -117,25 +171,45 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
         $productTitle = implode(', ', array_filter(array_map(static fn($item) => (string)($item['product_name'] ?? ''), $items)));
         $orderPublicId = (string)($order['order_id'] ?? $order['id'] ?? '');
         $isPaid = in_array((string)($order['payment_status'] ?? ''), ['paid'], true);
-        $trackSteps = ['received', 'design_approved', 'printing', 'other_process', 'ready'];
+        $hasAdminUpdate = !empty($order['admin_update_pending']);
+        $requiresCustomerAction = $hasAdminUpdate && in_array((string)($order['admin_update_type'] ?? ''), ['admin_proof_uploaded','admin_issue_marked'], true);
+        $adminUpdateLabel = match ((string)($order['admin_update_type'] ?? '')) {
+            'admin_proof_uploaded' => 'Proof Ready — Your Approval Required',
+            'admin_issue_marked' => 'Artwork Action Required',
+            'admin_design_approved' => 'Design Approved',
+            'order_status_updated' => $statusLabels[$status] ?? ucfirst(str_replace('_',' ',$status)),
+            'invoice_uploaded' => 'Invoice Available',
+            'shipping_updated' => 'Shipping Details Updated',
+            default => 'New Order Update',
+        };
+        $isQuoteOnly = !empty($order['is_quote_only']);
+        $customRequest = is_array($order['custom_request'] ?? null) ? $order['custom_request'] : [];
+        $canPayCustom = $custom && $isQuoteOnly && !$isPaid
+            && !empty($order['quote_token'])
+            && in_array($status, ['customer_approved', 'payment_pending'], true);
+        $canPayAdminOrder = !$isQuoteOnly && !$isPaid && (string)($order['order_source'] ?? '') === 'admin' && !empty($order['id']);
+        $trackSteps = ['received', 'design_approved', 'printing', 'other_process', 'ready', 'delivered'];
         $trackStatus = $status === 'processing' ? 'other_process' : $status;
         $trackIndex = array_search($trackStatus, $trackSteps, true);
         $trackIndex = $trackIndex === false ? -1 : (int)$trackIndex;
         $isCancelled = $status === 'cancelled';
         $isWhatsappPending = $status === 'whatsapp_pending';
+        $canCancel = in_array($status, ['new_order','received','whatsapp_pending','design_approved'], true) && !$isQuoteOnly;
+        $refundRequested = !empty($order['refund_requested_at']) || (string)($order['customer_update_type'] ?? '') === 'customer_refund_requested';
+        $canRequestRefund = $status === 'cancelled' && $isPaid && !$refundRequested && !$isQuoteOnly;
       ?>
-        <details id="account-order-<?= $h(preg_replace('/[^A-Za-z0-9_-]+/', '-', $orderPublicId)) ?>" class="account-order-detail" data-order-detail="<?= $h($orderPublicId) ?>">
+        <details id="account-order-<?= $h(preg_replace('/[^A-Za-z0-9_-]+/', '-', $orderPublicId)) ?>" class="account-order-detail <?= $hasAdminUpdate ? 'has-admin-update' : '' ?> <?= $requiresCustomerAction ? 'requires-customer-action' : '' ?>" data-order-detail="<?= $h($orderPublicId) ?>" data-order-db-id="<?= (int)($order['id'] ?? 0) ?>" data-admin-update-type="<?= $h($order['admin_update_type'] ?? '') ?>">
           <summary class="account-order-row" role="row">
-            <strong>#<?= $h($order['order_id'] ?? $order['id'] ?? '') ?></strong>
+            <strong><?= $h($order['order_id'] ?? $order['id'] ?? '') ?></strong>
             <span><?= !empty($order['created_at']) ? date('d M, Y', strtotime((string)$order['created_at'])) : '—' ?></span>
-            <span class="account-product-count" title="<?= $h($productTitle) ?>"><?= count($items) ?> item<?= count($items) === 1 ? '' : 's' ?></span>
+            <span class="account-product-count" title="<?= $h($productTitle) ?>"><?= count($items) ?> item<?= count($items) === 1 ? '' : 's' ?><?php if(($order['order_type']??'normal')==='combo_offer'):?> · <b class="account-order-type-tag">Combo Offer</b><?php endif;?></span>
             <b>₹<?= number_format((float)($order['total_amount'] ?? 0)) ?></b>
-            <span class="account-status status-<?= $h($statusClass) ?>"><?= $h($statusLabels[$status] ?? ucfirst($status)) ?></span>
+            <span class="account-status status-<?= $h($statusClass) ?>"><?= $h($hasAdminUpdate ? $adminUpdateLabel : ($statusLabels[$status] ?? ucfirst($status))) ?></span>
             <span class="account-mini-btn">Actions <i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span>
           </summary>
           <div class="account-order-expanded">
             <div class="account-order-items-panel">
-              <div class="account-order-block-title"><strong>Order Items & Files</strong><span>Artwork and proofs are separated item-wise</span></div>
+              <div class="account-order-block-title"><strong><?= $custom ? 'Custom Order Details' : 'Order Items & Files' ?></strong><span><?= $isQuoteOnly ? 'Approved quote and specifications' : 'Artwork and proofs are separated item-wise' ?></span></div>
               <?php if (empty($items)): ?>
                 <p>No product items found for this order.</p>
               <?php else: ?>
@@ -157,20 +231,24 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
                     $canInitialArtworkUpload = $approvalId > 0 && (string)($item['design_choice'] ?? '') === 'upload' && empty($item['artwork_file_id']) && empty($item['artwork_filename']) && $designStatus === 'pending_review';
                     $canUploadArtwork = $approvalId > 0 && ($designStatus === 'issue_found' || $canInitialArtworkUpload);
                   ?>
-                    <article class="account-order-item-card <?= in_array($designStatus, ['issue_found','revision_requested'], true) ? 'account-design-issue' : '' ?>" data-design-approval-item="<?= $approvalId ?>" data-design-status="<?= $h($designStatus) ?>">
+                    <article class="account-order-item-card <?= $isQuoteOnly ? 'is-quote-only' : '' ?> <?= in_array($designStatus, ['issue_found','revision_requested'], true) ? 'account-design-issue' : '' ?>" data-design-approval-item="<?= $approvalId ?>" data-design-status="<?= $h($designStatus) ?>">
                       <div class="account-order-item-thumb">
                         <?php if ($productImg !== ''): ?><img src="<?= $h($productImg) ?>" alt="<?= $h($item['product_name'] ?? 'Product') ?>" loading="lazy"><?php else: ?><i class="fa-solid fa-box-open"></i><?php endif; ?>
                       </div>
                       <div class="account-order-item-main">
                         <div class="account-order-item-title">
-                          <strong><?= $h($item['product_name'] ?? 'Product') ?></strong>
-                          <span data-design-status-label><?= $h($designApprovalLabels[$designStatus] ?? ucfirst(str_replace('_', ' ', $designStatus))) ?></span>
+                          <strong><?= $h($item['product_name'] ?? 'Product') ?><?= (($item['item_type']??'')==='combo_component')?' · Combo Item':'' ?></strong>
+                          <span data-design-status-label><?= $isQuoteOnly ? 'Quote Details' : $h($designApprovalLabels[$designStatus] ?? ucfirst(str_replace('_', ' ', $designStatus))) ?></span>
                         </div>
-                        <p><?= number_format((float)($item['quantity'] ?? 0)) ?> qty × <?= $h($item['quality_name'] ?? 'Standard') ?></p>
+                        <?php $displayQuantity=trim((string)($item['custom_quantity']??''))?:number_format((float)($item['quantity']??0));$quantityLabel=preg_match('/(?:qty|pcs|pieces|units?)$/i',$displayQuantity)?$displayQuantity:($displayQuantity.' qty');$displayQuality=trim((string)($item['custom_material_type']??''))?:trim((string)($item['quality_name']??'')); ?>
+                        <p><?= $h($quantityLabel) ?><?= $displayQuality!==''?' × '.$h($displayQuality):'' ?></p>
+                        <?php if(($item['item_type']??'')==='combo_component'&&!empty($item['price_breakdown']['description'])): ?><small><?= $h($item['price_breakdown']['description']) ?></small><?php endif; ?>
+                        <?php if ($isQuoteOnly && !empty($item['custom_size_dimension'])): ?><small>Size / Dimension: <?= $h($item['custom_size_dimension']) ?></small><?php endif; ?>
+                        <?php if ($isQuoteOnly && !empty($customRequest['quote_note'])): ?><small><?= nl2br($h($customRequest['quote_note'])) ?></small><?php endif; ?>
                         <?php if (!empty($item['design_admin_note'])): ?><small class="<?= $designStatus === 'issue_found' ? 'account-design-alert-note' : '' ?>"><?= $designStatus === 'issue_found' ? '⚠ Action required: ' : '' ?><?= $h($item['design_admin_note']) ?></small><?php endif; ?>
                         <?php if (!empty($item['design_customer_note'])): ?><small class="account-design-customer-note">Your message: <?= $h($item['design_customer_note']) ?></small><?php endif; ?>
                       </div>
-                      <div class="account-order-file-grid">
+                      <?php if (!$isQuoteOnly): ?><div class="account-order-file-grid">
                         <div class="account-order-file" data-artwork-box>
                           <b>Your artwork</b>
                           <div data-artwork-preview>
@@ -223,7 +301,7 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
                         <?php else: ?>
                           <span data-design-action-status><?= $h($designApprovalLabels[$designStatus] ?? ucfirst(str_replace('_', ' ', $designStatus))) ?></span>
                         <?php endif; ?>
-                      </div>
+                      </div><?php endif; ?>
                       <div class="account-order-live-msg" data-design-live-msg hidden></div>
                     </article>
                   <?php endforeach; ?>
@@ -232,22 +310,24 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
             <div class="account-order-bottom-bar">
             <div class="account-order-info-card">
               <strong>Payment</strong>
-              <p><?= $h(ucfirst((string)($order['payment_status'] ?? 'pending'))) ?> · <?= $h(ucfirst((string)($order['payment_method'] ?? ''))) ?></p>
+              <p><?= $h(ucwords(str_replace('_', ' ', (string)($order['payment_status'] ?? 'pending')))) ?><?php if (!empty($order['payment_method'])): ?> · <?= $h(ucfirst((string)$order['payment_method'])) ?><?php endif; ?></p>
               <?php if (!empty($order['payment_id'])): ?><small>Payment ID: <?= $h($order['payment_id']) ?></small><?php endif; ?>
             </div>
             <div class="account-order-actions-list" aria-label="Order actions">
               <strong>Actions</strong>
-              <button type="button" onclick="openAccountOrder(this)"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Track Order</button>
+              <?php if ($canPayCustom): ?><a href="/custom-checkout/<?= rawurlencode((string)$order['quote_token']) ?>"><i class="fa-solid fa-lock" aria-hidden="true"></i> Pay Custom Order</a><?php endif; ?>
+              <?php if ($canPayAdminOrder): ?><button type="button" onclick="payAdminCreatedOrder(<?= (int)$order['id'] ?>,this)"><i class="fa-solid fa-lock" aria-hidden="true"></i> Pay Now</button><?php endif; ?>
+              <?php if (!$isQuoteOnly): ?><button type="button" onclick="openAccountOrder(this)"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Track Order</button><?php endif; ?>
               <?php if ($isPaid && $orderPublicId !== '' && !empty($order['invoice_file_path'])): ?>
                 <a href="/invoice/<?= rawurlencode($orderPublicId) ?>" target="_blank" rel="noopener"><i class="fa-regular fa-file-lines" aria-hidden="true"></i> Download Invoice</a>
               <?php elseif ($isPaid): ?>
                 <span class="account-order-action-disabled"><i class="fa-regular fa-file-lines" aria-hidden="true"></i> Invoice will be available soon</span>
-              <?php else: ?>
+              <?php elseif (!$isQuoteOnly): ?>
                 <span class="account-order-action-disabled"><i class="fa-regular fa-file-lines" aria-hidden="true"></i> Invoice after payment</span>
               <?php endif; ?>
             </div>
             </div>
-            <div class="account-order-tracking" aria-label="Tracking detail">
+            <?php if (!$isQuoteOnly): ?><div class="account-order-tracking" aria-label="Tracking detail">
               <div class="account-track-head">
                 <strong>Tracking Detail</strong>
                 <span><?= $h($statusLabels[$status] ?? ucfirst($status)) ?></span>
@@ -268,7 +348,8 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
                   <?php endforeach; ?>
                 </div>
               <?php endif; ?>
-            </div>
+            </div><?php endif; ?>
+            <?php if ($canCancel || $canRequestRefund || $refundRequested): ?><div class="account-order-cancel-row"><?php if ($canCancel): ?><button type="button" class="account-order-cancel-btn" onclick="cancelAccountOrder(<?= (int)($order['id'] ?? 0) ?>, this)"><i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel Order</button><?php endif; ?><?php if ($canRequestRefund): ?><button type="button" class="account-order-refund-btn" onclick="requestAccountRefund(<?= (int)($order['id'] ?? 0) ?>, this)"><i class="fa-solid fa-rotate-left"></i> Request Refund</button><?php elseif ($refundRequested): ?><span class="account-refund-pending">Refund requested</span><?php endif; ?></div><?php endif; ?>
           </div>
         </details>
       <?php endforeach; ?>
@@ -317,8 +398,9 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
 
         <section class="account-card account-profile-card" aria-label="Profile summary">
           <div class="account-avatar-wrap">
-            <div class="account-avatar" aria-hidden="true"><?= $h($initials) ?></div>
-            <button type="button" data-account-tab="details" aria-label="Edit profile photo"><i class="fa-solid fa-camera"></i></button>
+            <div class="account-avatar" id="accountAvatar" aria-label="Profile photo"><?php if($avatarPath!==''):?><img src="<?= $h($avatarPath) ?>" alt="<?= $h($name) ?> profile photo"><?php else:?><?= $h($initials) ?><?php endif;?></div>
+            <input type="file" id="accountAvatarInput" accept="image/jpeg,image/png,image/webp" hidden>
+            <button type="button" id="accountAvatarButton" aria-label="Upload profile photo"><i class="fa-solid fa-camera"></i></button>
           </div>
           <div class="account-profile-copy">
             <h2><?= $h($name) ?></h2>
@@ -350,7 +432,7 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
         </section>
       </section>
 
-      <section class="account-tab-panel" data-account-panel="custom-orders"><section class="account-card account-orders-card"><div class="account-section-head"><div><h2>My Custom Orders</h2><p>Approved custom quotes, payment links and updates.</p></div></div><?php if(empty($customOrders)): ?><div class="account-empty-state compact"><strong>No custom orders yet</strong></div><?php else: ?><div class="custom-account-orders"><?php foreach($customOrders as $co): ?><article class="custom-account-order"><div><span class="custom-order-badge"><?= $h(str_replace('_',' ',$co['status'])) ?></span><h3><?= $h($co['request_code']) ?> · <?= $h($co['product_name']) ?></h3><p><?= $h($co['size_dimension']) ?> · <?= $h($co['material_type']) ?> · Qty <?= $h($co['quantity']) ?></p><strong>₹<?= number_format((float)$co['quoted_amount'],2) ?></strong></div><?php if(!empty($co['quote_token']) && in_array($co['status'],['customer_approved','payment_pending'],true)): ?><a class="btn btn-blue btn-sm" href="/custom-cart/<?= rawurlencode($co['quote_token']) ?>">Pay Custom Order</a><?php endif; ?></article><?php endforeach; ?></div><?php endif; ?></section></section>
+      <section class="account-tab-panel" data-account-panel="custom-orders"><section class="account-card account-orders-card"><div class="account-section-head"><div><h2>My Custom Orders</h2><p>Custom quotes, payments, production updates and actions in one place.</p></div></div><?php $renderOrders($customOrderDisplay, false, true); ?></section></section>
       <section class="account-tab-panel" data-account-panel="wishlist" aria-labelledby="wishlistPanelTitle">
         <section class="account-card account-wishlist-card">
           <div class="account-section-head">
@@ -478,7 +560,7 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
                     </div>
                     <div>
                       <strong><?= $h($item['product_name'] ?? 'Product') ?></strong>
-                      <span>Order #<?= $h($item['public_order_id'] ?? '') ?><?= !empty($item['order_created_at']) ? ' · ' . date('d M, Y', strtotime((string)$item['order_created_at'])) : '' ?></span>
+                      <span>Order <?= $h($item['public_order_id'] ?? '') ?><?= !empty($item['order_created_at']) ? ' · ' . date('d M, Y', strtotime((string)$item['order_created_at'])) : '' ?></span>
                       <?php if ($productUrl !== '#'): ?><a href="<?= $h($productUrl) ?>">View product</a><?php endif; ?>
                     </div>
                   </div>
@@ -532,7 +614,9 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
 
       <section class="account-tab-panel" data-account-panel="addresses" aria-labelledby="addressesPanelTitle">
         <section class="account-card account-form-card">
-          <div class="account-section-head"><div><h2 id="addressesPanelTitle">Saved Addresses</h2><p>Manage default delivery and billing addresses used during checkout.</p></div></div>
+          <div class="account-section-head"><div><h2 id="addressesPanelTitle">Saved Addresses</h2><p>Manage delivery and billing addresses used during checkout.</p></div><button class="btn btn-blue btn-sm" type="button" onclick="toggleNewAddressForm(true)">＋ Add Address</button></div>
+          <?php if ($savedAddresses): ?><div class="account-saved-address-grid" id="savedAddressGrid"><?php foreach($savedAddresses as $address): ?><article class="account-saved-address"><div><strong><?= $h($address['label']) ?><?= !empty($address['is_default'])?' · Default':'' ?></strong><p><?= $h($address['business_name']) ?><br><?= $h($address['address_line1']) ?> <?= $h($address['address_line2']) ?><br><?= $h($address['city']) ?>, <?= $h($address['state']) ?> <?= $h($address['pincode']) ?></p></div><button type="button" onclick="deleteSavedAddress(<?= (int)$address['id'] ?>,this)">Delete</button></article><?php endforeach; ?></div><?php endif; ?>
+          <div class="account-form-block account-new-address" id="newAddressForm" hidden><h3>Add New Address</h3><div class="f2"><div class="fg"><label>Label</label><input id="pa-label" class="fi" placeholder="Home / Office"></div><div class="fg"><label>Business / Recipient</label><input id="pa-business" class="fi"></div></div><div class="fg"><label>Address Line 1 *</label><input id="pa-add1" class="fi"></div><div class="fg"><label>Address Line 2</label><input id="pa-add2" class="fi"></div><div class="f2"><div class="fg"><label>City *</label><input id="pa-city" class="fi"></div><div class="fg"><label>State *</label><input id="pa-state" class="fi"></div></div><div class="fg"><label>Pincode *</label><input id="pa-pin" class="fi"></div><label class="account-same-address"><input id="pa-default" type="checkbox"><span>Set as default</span></label><div class="account-form-actions"><button class="btn btn-blue" type="button" onclick="addSavedAddress()">Save New Address</button><button class="btn btn-outline" type="button" onclick="toggleNewAddressForm(false)">Cancel</button></div></div>
           <div class="account-form-block">
             <h3><i class="fa-solid fa-location-dot"></i> Default Delivery Address</h3>
             <div class="fg"><label>Address Line 1</label><input id="ps-add1" class="fi" value="<?= $h($shipping['address_line1'] ?? '') ?>"></div>
@@ -634,28 +718,13 @@ $renderOrders = static function (array $list, bool $compact = false) use ($h, $s
     </div>
   </section>
 
-  <section class="quick-help-section account-quick-help-section" aria-label="Quick help and bulk order actions" data-reveal>
-    <div class="quick-help-container">
-      <div class="quick-help-bar">
-        <a class="quick-help-item quick-help-call" href="tel:<?= $h($accountBizPhoneHref) ?>">
-          <span class="quick-help-icon"><i class="fa-solid fa-phone-volume" aria-hidden="true"></i></span>
-          <span class="quick-help-copy"><span>Need Help? Call Us</span><strong><?= $accountBizPhone ?></strong></span>
-        </a>
-        <button class="quick-help-item quick-help-whatsapp" type="button" onclick="window.open('https://wa.me/<?= $h($accountBizWa) ?>','_blank')">
-          <span class="quick-help-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></span>
-          <span class="quick-help-copy"><strong>Chat with us on WhatsApp</strong><span>We are here to help!</span></span>
-        </button>
-        <a class="quick-help-item quick-help-download" href="/categories" aria-label="Download our brochure for all products">
-          <span class="quick-help-icon"><i class="fa-solid fa-download" aria-hidden="true"></i></span>
-          <span class="quick-help-copy"><strong>Download Our Brochure</strong><span>For All Products</span></span>
-        </a>
-      </div>
-    </div>
-  </section>
+  <?php $quickHelpExtraClass='account-quick-help-section'; include INCLUDE_PATH . '/partials/quick-help.php'; ?>
 </main>
 
 <script>
 const ACCOUNT_TABS = ['dashboard','orders','custom-orders','wishlist','designs','reviews','addresses','details','security'];
+const avatarButton=document.getElementById('accountAvatarButton'),avatarInput=document.getElementById('accountAvatarInput');avatarButton?.addEventListener('click',()=>avatarInput?.click());avatarInput?.addEventListener('change',async()=>{const file=avatarInput.files?.[0];if(!file)return;if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>5*1024*1024){toast('Use a JPG, PNG or WEBP image under 5MB','error');avatarInput.value='';return}avatarButton.disabled=true;const body=new FormData();body.append('avatar',file);try{const data=await fetch('/api/profile/avatar',{method:'POST',headers:{'X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin',body}).then(r=>r.json());if(!data.ok){toast(data.msg||'Photo upload failed','error');return}document.getElementById('accountAvatar').innerHTML=`<img src="${String(data.path).replace(/["<>]/g,'')}" alt="Profile photo">`;toast('Profile photo updated','success');}catch(error){toast('Photo upload failed','error');}finally{avatarButton.disabled=false;avatarInput.value='';}});
+async function payAdminCreatedOrder(orderId,button){if(typeof Razorpay==='undefined'){alert('Payment service is unavailable. Please retry.');return;}button.disabled=true;const original=button.innerHTML;button.textContent='Opening payment…';try{const create=await fetch(`/api/orders/${orderId}/payment/create`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin',body:'{}'}),session=await create.json();if(!create.ok||!session.ok)throw new Error(session.msg||'Could not start payment.');const gateway=new Razorpay({key:session.key_id,amount:session.amount,currency:session.currency,name:'RCS Graphic',description:'Pending order payment',order_id:session.razorpay_order_id,handler:async response=>{try{const verify=await fetch(`/api/orders/${orderId}/payment/verify`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin',body:JSON.stringify(response)}),result=await verify.json();if(!verify.ok||!result.ok)throw new Error(result.msg||'Payment verification failed.');rememberOpenAccountOrder(button);location.reload();}catch(error){alert(error.message||'Payment verification failed. Please contact support with your payment ID.');button.disabled=false;button.innerHTML=original;}},modal:{ondismiss:()=>{button.disabled=false;button.innerHTML=original;}}});gateway.on('payment.failed',event=>{alert(event.error?.description||'Payment failed.');button.disabled=false;button.innerHTML=original;});gateway.open();}catch(error){alert(error.message||'Could not start payment.');button.disabled=false;button.innerHTML=original;}}
 
 function setAccountTab(tab, pushHash = true) {
   const safeTab = ACCOUNT_TABS.includes(tab) ? tab : 'dashboard';
@@ -678,6 +747,18 @@ document.querySelectorAll('[data-account-tab]').forEach(el => {
     if (!tab) return;
     event.preventDefault();
     setAccountTab(tab);
+  });
+});
+
+document.querySelectorAll('.account-order-detail.has-admin-update').forEach(card => {
+  card.addEventListener('toggle', async () => {
+    if (!card.open || card.dataset.updateAcknowledged === '1') return;
+    if (!['order_status_updated','admin_design_approved','invoice_uploaded','shipping_updated'].includes(card.dataset.adminUpdateType || '')) return;
+    const id = Number(card.dataset.orderDbId || 0);
+    if (!id) return;
+    card.dataset.updateAcknowledged = '1';
+    const resp = await fetch(`/api/orders/${id}/admin-update/ack`, {method:'POST', headers:{'X-CSRF-TOKEN':'<?= $h($csrf ?? '') ?>'}, credentials:'same-origin'});
+    if (resp.ok) card.classList.remove('has-admin-update');
   });
 });
 
@@ -746,7 +827,9 @@ const linkedOrder = getOrderKeyFromHash();
 if (linkedOrder) {
   storeAccountOrderOpen(linkedOrder, true);
 }
-const initialAccountTab = getAccountTabFromHash() || ((linkedOrder || rememberedOrder) ? (sessionStorage.getItem(ACCOUNT_OPEN_TAB_KEY) || 'orders') : 'dashboard');
+// A plain /profile visit always opens Dashboard; the URL hash preserves the
+// selected section across refreshes and direct links.
+const initialAccountTab = getAccountTabFromHash() || 'dashboard';
 setAccountTab(initialAccountTab, false);
 restoreOpenAccountOrders(Boolean(linkedOrder));
 window.addEventListener('load', () => restoreOpenAccountOrders(Boolean(getOrderKeyFromHash())));
@@ -840,14 +923,8 @@ async function uploadAccountArtworkRevision(input, id) {
   const oldText = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
   try {
-    const resp = await fetch(`/api/design-approvals/${id}/artwork`, {
-      method: 'POST',
-      headers: { 'X-CSRF-TOKEN': APP.csrfToken },
-      credentials: 'same-origin',
-      body: fd,
-    });
-    const data = await resp.json();
-    if (!data.ok) {
+    const {ok,data} = await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST',`/api/design-approvals/${id}/artwork`);xhr.withCredentials=true;xhr.setRequestHeader('X-CSRF-TOKEN',APP.csrfToken);xhr.upload.onprogress=event=>{if(!event.lengthComputable)return;const percent=Math.round((event.loaded/event.total)*100);if(btn)btn.textContent=`Uploading ${percent}%`;const hint=form?.querySelector('small');if(hint)hint.textContent=`Secure upload in progress — ${percent}%`;};xhr.onerror=()=>reject(new Error('Network upload failed.'));xhr.onload=()=>{let payload={};try{payload=JSON.parse(xhr.responseText||'{}')}catch(e){}resolve({ok:xhr.status>=200&&xhr.status<300,data:payload});};xhr.send(fd);});
+    if (!ok || !data.ok) {
       const errorMsg = data.msg || 'Could not reupload design.';
       showDesignUploadError(input, errorMsg);
       alert(errorMsg);
@@ -1057,7 +1134,7 @@ function restoreOpenAccountOrders(shouldScroll = false) {
   const pendingKey = sessionStorage.getItem(ACCOUNT_PENDING_OPEN_ORDER_KEY) || '';
   const keys = [...new Set([hashKey, pendingKey, ...getStoredAccountOrders()].filter(Boolean))];
   if (!keys.length) return;
-  setAccountTab(sessionStorage.getItem(ACCOUNT_OPEN_TAB_KEY) || 'orders', false);
+  if (hashKey || pendingKey) setAccountTab('orders', false);
   let scrollTarget = null;
   keys.forEach((key) => {
     const detail = Array.from(document.querySelectorAll('.account-order-detail')).find(item => item.dataset.orderDetail === key);
@@ -1198,6 +1275,33 @@ async function saveProfile() {
     target.style.display = 'block';
   }
 }
+
+async function cancelAccountOrder(id, btn) {
+  if (!id || !confirm('Cancel this order? This is allowed only before printing starts.')) return;
+  const reason = prompt('Optional cancellation reason:', '') ?? '';
+  btn.disabled = true;
+  const resp = await fetch(`/api/orders/${id}/cancel`, {method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin',body:JSON.stringify({reason})});
+  const data = await resp.json().catch(()=>({ok:false,msg:'Could not cancel order.'}));
+  if (!data.ok) { alert(data.msg || 'Could not cancel order.'); btn.disabled=false; return; }
+  alert(data.msg || 'Order cancelled.'); location.reload();
+}
+
+async function requestAccountRefund(id, btn) {
+  if (!id || !confirm('Submit a refund request for this cancelled order?')) return;
+  const note = prompt('Optional refund note:', '') ?? '';
+  btn.disabled = true;
+  const resp = await fetch(`/api/orders/${id}/refund-request`, {method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin',body:JSON.stringify({note})});
+  const data = await resp.json().catch(()=>({ok:false,msg:'Could not request refund.'}));
+  if (!data.ok) { alert(data.msg || 'Could not request refund.'); btn.disabled=false; return; }
+  alert(data.msg || 'Refund request submitted.'); location.reload();
+}
+
+function toggleNewAddressForm(show){const form=document.getElementById('newAddressForm');if(form)form.hidden=!show;}
+async function addSavedAddress(){
+  const payload={label:document.getElementById('pa-label').value,business_name:document.getElementById('pa-business').value,address_line1:document.getElementById('pa-add1').value,address_line2:document.getElementById('pa-add2').value,city:document.getElementById('pa-city').value,state:document.getElementById('pa-state').value,pincode:document.getElementById('pa-pin').value,is_default:document.getElementById('pa-default').checked};
+  const resp=await fetch('/api/profile/addresses',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin',body:JSON.stringify(payload)});const data=await resp.json();if(!data.ok){alert(data.msg||'Could not save address.');return;}location.reload();
+}
+async function deleteSavedAddress(id,btn){if(!confirm('Delete this saved address?'))return;btn.disabled=true;const resp=await fetch(`/api/profile/addresses/${id}`,{method:'DELETE',headers:{'X-CSRF-TOKEN':APP.csrfToken},credentials:'same-origin'});if(resp.ok)location.reload();else btn.disabled=false;}
 
 async function changePassword() {
   const err = document.getElementById('pwErr');
