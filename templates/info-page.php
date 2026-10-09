@@ -172,24 +172,7 @@ $aboutReviews = is_array($aboutReviews ?? null) ? array_slice($aboutReviews, 0, 
     </div>
   </section>
 
-  <section class="quick-help-section about-quick-help-section" aria-label="Quick help and bulk order actions">
-    <div class="quick-help-container">
-      <div class="quick-help-bar">
-        <a class="quick-help-item quick-help-call" href="tel:<?= $phoneHref ?>">
-          <span class="quick-help-icon"><i class="fa-solid fa-phone-volume" aria-hidden="true"></i></span>
-          <span class="quick-help-copy"><span>Need Help? Call Us</span><strong><?= $phone ?></strong></span>
-        </a>
-        <button class="quick-help-item quick-help-whatsapp" type="button" onclick="window.open('https://wa.me/<?= $wa ?>','_blank')">
-          <span class="quick-help-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></span>
-          <span class="quick-help-copy"><strong>Chat with us on WhatsApp</strong><span>We are here to help!</span></span>
-        </button>
-        <a class="quick-help-item quick-help-download" href="/categories" aria-label="Download our brochure for all products">
-          <span class="quick-help-icon"><i class="fa-solid fa-download" aria-hidden="true"></i></span>
-          <span class="quick-help-copy"><strong>Download Our Brochure</strong><span>For All Products</span></span>
-        </a>
-      </div>
-    </div>
-  </section>
+  <?php $quickHelpExtraClass='about-quick-help-section'; include INCLUDE_PATH . '/partials/quick-help.php'; ?>
 </main>
 <?php include INCLUDE_PATH . '/partials/site-footer.php'; ?>
 <?php include INCLUDE_PATH . '/partials/footer.php'; ?>

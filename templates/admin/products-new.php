@@ -6,27 +6,32 @@ $editId = (int)($_GET['id'] ?? 0);
 ?>
 <div class="adm-pt"><?= $editId ? 'Edit Product' : 'Add Product' ?></div>
 
-<div class="fsec" style="max-width:960px">
+<div class="fsec product-editor-wide">
   <input type="hidden" id="ep-id" value="<?= $editId ?>">
 
-  <div class="f2">
+  <div class="product-editor-grid product-editor-grid-4">
     <div class="fg"><label>Product Name *</label><input class="fi" id="ep-name"></div>
     <div class="fg"><label>Category *</label><select class="fi fi-sel" id="ep-cat"></select></div>
-  </div>
-  <div class="f2">
-    <div class="fg"><label>Product Code</label><input class="fi" id="ep-code" placeholder="Auto: PREFIX-001"></div>
+    <div class="fg"><label>Product Code Number *</label><input class="fi" id="ep-code" inputmode="numeric" pattern="[0-9]+" placeholder="e.g. 0012" required></div>
     <div class="fg"><label>Code Prefix (from category)</label><input class="fi" id="ep-prefix" disabled></div>
   </div>
   <div id="ep-code-help" style="font-size:12px;color:var(--text2);margin-top:-6px;margin-bottom:10px">
-    Leave Product Code empty to auto-generate from selected category prefix.
+    Enter numbers only. The saved code will be Category Prefix + this number, without spaces or symbols.
   </div>
-  <div class="f2">
+  <div class="product-editor-grid product-editor-grid-3">
     <div class="fg"><label>Design Fee (₹)</label><input type="number" min="0" class="fi" id="ep-design-fee" value="0"></div>
     <div class="fg"><label>Original Price / MRP (₹)</label><input type="number" min="0" step="0.01" class="fi" id="ep-original-price" placeholder="Optional, for discount badge"></div>
+    <div class="fg"><label>Status</label><select class="fi fi-sel" id="ep-active"><option value="1">Active</option><option value="0">Inactive</option></select></div>
   </div>
-  <div class="fg"><label>Status</label><select class="fi fi-sel" id="ep-active"><option value="1">Active</option><option value="0">Inactive</option></select></div>
   <div class="fg"><label>Business / Sector Collections</label><div id="ep-business-needs" class="product-sector-picker"></div><div style="font-size:12px;color:var(--text3);margin-top:6px">Select sectors where this product should appear, e.g. Education, Healthcare, Retail.</div></div>
-  <div class="fg"><label>Description</label><textarea class="fi" id="ep-desc" style="height:84px"></textarea></div>
+  <div class="product-editor-grid product-editor-grid-2">
+    <div class="fg"><label>Description</label><textarea class="fi" id="ep-desc" style="height:84px"></textarea></div>
+    <div class="fg"><label>YouTube Video URL</label><input class="fi" id="ep-video-url" placeholder="https://www.youtube.com/watch?v=..."></div>
+  </div>
+  <div class="f2">
+    <div class="fg"><label><input type="checkbox" id="ep-show-delivery" checked> Show delivery information</label><input class="fi" id="ep-delivery" value="Delivery in 3 - 5 Working Days"></div>
+    <div class="fg"><label><input type="checkbox" id="ep-show-free-delivery" checked> Show free-delivery information</label><input class="fi" id="ep-free-delivery" value="Free Delivery on Orders Above ₹999"></div>
+  </div>
   <div class="fg"><label>Specifications (Label: Value per line)</label><textarea class="fi" id="ep-specs" style="height:96px"></textarea></div>
 
   <div class="fg">
@@ -42,16 +47,9 @@ $editId = (int)($_GET['id'] ?? 0);
   </div>
 
   <div class="fg" style="margin-top:8px">
-    <label>Quantity Tier Pricing (Fixed: 1000 → 10000) *</label>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px">
-      <?php for ($q = 1000; $q <= 10000; $q += 1000): ?>
-      <div style="border:1px solid var(--border);border-radius:10px;padding:10px;background:#fff">
-        <div style="font-size:12px;color:var(--text2);margin-bottom:6px;font-weight:700"><?= number_format($q) ?> pcs</div>
-        <input type="number" min="0" step="0.01" class="fi tier-fixed" data-qty="<?= $q ?>" placeholder="Price for <?= number_format($q) ?>">
-      </div>
-      <?php endfor; ?>
-    </div>
-    <div style="font-size:12px;color:var(--text3);margin-top:6px">Leave blank to skip a quantity.</div>
+    <div class="product-tier-head"><label>Quantity Tier Pricing *</label><button class="btn btn-outline btn-sm" type="button" onclick="addTierRow()">＋ Add Quantity &amp; Price</button></div>
+    <div id="tierRows" class="product-tier-rows"></div>
+    <div style="font-size:12px;color:var(--text3);margin-top:6px">Add any required quantity and its total price. Existing storefront calculations remain unchanged.</div>
   </div>
 
   <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:16px">
@@ -64,7 +62,6 @@ $editId = (int)($_GET['id'] ?? 0);
 let allCats = [];
 let currentImages = [];
 let pendingImages = [];
-let autoCodePreview = '';
 let productFilters = {};
 let businessNeeds = [];
 
@@ -110,14 +107,15 @@ function normalizeImage(img) {
 
 function collectFixedTiers() {
   const tiers = [];
-  document.querySelectorAll('.tier-fixed').forEach(input => {
-    const qty = parseInt(input.dataset.qty || '0', 10);
-    const price = parseFloat(input.value || '0');
+  document.querySelectorAll('.tier-row').forEach(row => {
+    const qty = parseInt(row.querySelector('[data-tier-qty]').value || '0', 10);
+    const price = parseFloat(row.querySelector('[data-tier-price]').value || '0');
     if (price > 0) tiers.push({quantity: qty, price});
   });
   if (!tiers.length) return {ok:false, msg:'Add at least one quantity price'};
   return {ok:true, tiers};
 }
+function addTierRow(tier={}){document.getElementById('tierRows').insertAdjacentHTML('beforeend',`<div class="tier-row"><label>Quantity<input type="number" min="1" step="1" class="fi" data-tier-qty value="${Number(tier.quantity||'')||''}" placeholder="e.g. 500"></label><label>Price (₹)<input type="number" min="0.01" step="0.01" class="fi" data-tier-price value="${Number(tier.price||'')||''}" placeholder="Total price"></label><button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.tier-row').remove()">Remove</button></div>`)}
 
 function renderProductFilters(selected = {}) {
   const box = document.getElementById('ep-filter-options');
@@ -163,7 +161,7 @@ function renderBusinessNeeds(selected = []) {
     box.innerHTML = '<div style="padding:12px;border:1px dashed var(--border);border-radius:10px;color:var(--text2);background:#fff;font-size:12px">No business sectors yet. Create sectors from Admin → Business Needs.</div>';
     return;
   }
-  box.innerHTML = businessNeeds.map(need => `<label class="product-sector-choice"><input type="checkbox" class="ep-business-check" value="${Number(need.id)}" ${selectedSet.has(Number(need.id)) ? 'checked' : ''}><span><b>${escH(need.icon || '🏢')} ${escH(need.name)}</b><small>${escH(need.description || 'Sector collection')}</small></span></label>`).join('');
+  box.innerHTML = businessNeeds.map(need => `<label class="product-sector-choice"><input type="checkbox" class="ep-business-check" value="${Number(need.id)}" ${selectedSet.has(Number(need.id)) ? 'checked' : ''}><span><b>${escH(need.name)}</b></span></label>`).join('');
 }
 function collectBusinessNeeds() {
   return [...document.querySelectorAll('.ep-business-check:checked')].map(input => Number(input.value)).filter(Boolean);
@@ -186,8 +184,7 @@ async function boot() {
   document.getElementById('ep-images').addEventListener('change', e => {
     const files = [...(e.target.files || [])];
     if (!files.length) return;
-    pendingImages.forEach(img => { if (img.image_path?.startsWith('blob:')) URL.revokeObjectURL(img.image_path); });
-    pendingImages = files.map(f => ({image_path: URL.createObjectURL(f)}));
+    pendingImages.push(...files.map(f => ({image_path: URL.createObjectURL(f),file:f})));
     renderPreview();
   });
 
@@ -199,11 +196,19 @@ async function boot() {
   const p = res.product;
   document.getElementById('ep-name').value = p.name || '';
   document.getElementById('ep-cat').value = p.category_id || '';
-  document.getElementById('ep-code').value = p.product_code || '';
+  const selectedCategory=allCats.find(cat=>Number(cat.id)===Number(p.category_id));
+  const storedPrefix=String(selectedCategory?.code_prefix||'').replace(/[^a-z0-9]/gi,'').toUpperCase();
+  const storedCode=String(p.product_code||'').replace(/[^a-z0-9]/gi,'').toUpperCase();
+  document.getElementById('ep-code').value=storedPrefix&&storedCode.startsWith(storedPrefix)?storedCode.slice(storedPrefix.length).replace(/\D/g,''):storedCode.replace(/\D/g,'');
   document.getElementById('ep-design-fee').value = p.design_fee || 0;
   document.getElementById('ep-original-price').value = p.original_price || '';
   document.getElementById('ep-active').value = p.is_active ? '1' : '0';
   document.getElementById('ep-desc').value = p.description || '';
+  document.getElementById('ep-video-url').value = p.video_url || '';
+  document.getElementById('ep-show-delivery').checked = Number(p.show_delivery_info ?? 1) === 1;
+  document.getElementById('ep-delivery').value = p.delivery_info || 'Delivery in 3 - 5 Working Days';
+  document.getElementById('ep-show-free-delivery').checked = Number(p.show_free_delivery_info ?? 1) === 1;
+  document.getElementById('ep-free-delivery').value = p.free_delivery_info || 'Free Delivery on Orders Above ₹999';
   document.getElementById('ep-specs').value = (p.specs||[]).map(s=>`${s.label}: ${s.value||''}`).join('\n');
   renderProductFilters(p.filter_options || {});
   renderBusinessNeeds(p.business_need_ids || []);
@@ -213,12 +218,7 @@ async function boot() {
   renderPreview();
 
   const tiersRes = await fetch(`/admin/api/products/${id}/tiers`).then(r=>r.json());
-  const map = {};
-  (tiersRes.tiers || []).forEach(t => map[parseInt(t.quantity, 10)] = t.price);
-  document.querySelectorAll('.tier-fixed').forEach(input => {
-    const qty = parseInt(input.dataset.qty || '0', 10);
-    input.value = map[qty] ? String(map[qty]) : '';
-  });
+  document.getElementById('tierRows').innerHTML='';(tiersRes.tiers||[]).forEach(addTierRow);if(!(tiersRes.tiers||[]).length)addTierRow();
   await updateCatPrefixHint();
 }
 
@@ -229,17 +229,6 @@ async function updateCatPrefixHint() {
   const box = document.getElementById('ep-prefix');
   if (box) box.value = prefix || 'Not set';
 
-  autoCodePreview = '';
-  if (catId > 0) {
-    try {
-      const editId = parseInt(document.getElementById('ep-id')?.value || '0', 10);
-      const q = editId > 0 ? `?edit_id=${editId}` : '';
-      const res = await fetch(`/admin/api/categories/${catId}/next-product-code${q}`).then(r=>r.json());
-      if (res?.ok && res.code) autoCodePreview = String(res.code).toUpperCase();
-    } catch (e) {
-      console.warn('Could not fetch auto code preview', e);
-    }
-  }
   updateCodeHelp();
 }
 
@@ -248,18 +237,9 @@ function updateCodeHelp() {
   const help = document.getElementById('ep-code-help');
   if (!codeInput || !help) return;
   const typed = codeInput.value.trim().toUpperCase();
-  if (typed) {
-    help.textContent = 'Manual Product Code will be used as-is.';
-    help.style.color = 'var(--blue)';
-    return;
-  }
-  if (autoCodePreview) {
-    help.textContent = `Auto code on save: ${autoCodePreview}`;
-    help.style.color = 'var(--green)';
-    return;
-  }
-  help.textContent = 'Auto code unavailable (check category prefix / DB migration).';
-  help.style.color = 'var(--red)';
+  const prefix=(document.getElementById('ep-prefix')?.value||'').replace(/[^A-Z0-9]/gi,'').toUpperCase();
+  help.textContent=/^\d+$/.test(typed)&&prefix?`Product code on save: ${prefix}${typed}`:'Enter a numeric Product Code and select a category with a prefix.';
+  help.style.color=/^\d+$/.test(typed)&&prefix?'var(--green)':'var(--red)';
 }
 
 async function deleteProductImage(imageId) {
@@ -313,7 +293,9 @@ async function saveProd() {
   const id = parseInt(document.getElementById('ep-id').value || '0', 10);
   const name = document.getElementById('ep-name').value.trim();
   const catId = parseInt(document.getElementById('ep-cat').value || '0', 10);
+  const productNumber=document.getElementById('ep-code').value.trim();
   if (!name || !catId) { toast('Name and category required', 'error'); return; }
+  if (!/^\d+$/.test(productNumber)) { toast('Enter a numeric Product Code', 'error'); return; }
 
   const tierCheck = collectFixedTiers();
   if (!tierCheck.ok) { toast(tierCheck.msg, 'error'); return; }
@@ -329,6 +311,11 @@ async function saveProd() {
     category_id: catId,
     product_code: document.getElementById('ep-code').value.trim().toUpperCase(),
     description: document.getElementById('ep-desc').value.trim(),
+    video_url: document.getElementById('ep-video-url').value.trim(),
+    show_delivery_info: document.getElementById('ep-show-delivery').checked ? 1 : 0,
+    delivery_info: document.getElementById('ep-delivery').value.trim(),
+    show_free_delivery_info: document.getElementById('ep-show-free-delivery').checked ? 1 : 0,
+    free_delivery_info: document.getElementById('ep-free-delivery').value.trim(),
     design_fee: parseFloat(document.getElementById('ep-design-fee').value || '0') || 0,
     original_price: parseFloat(document.getElementById('ep-original-price').value || '0') || 0,
     is_active: parseInt(document.getElementById('ep-active').value || '1',10),
@@ -367,7 +354,7 @@ async function saveProd() {
     }).then(r=>r.json());
     if (!tr.ok) { toast(tr.msg || 'Tier save failed', 'error'); return; }
 
-    const files = [...(document.getElementById('ep-images').files || [])];
+    const files = pendingImages.map(item=>item.file).filter(Boolean);
     if (files.length) {
       const fd = new FormData();
       files.forEach(f => fd.append('images[]', f));
@@ -399,7 +386,7 @@ function toast(msg, type='info') {
   setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300);},3000);
 }
 
-boot();
+addTierRow();boot();
 </script>
     </div></div></div>
 </body></html>

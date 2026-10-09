@@ -157,35 +157,7 @@ include INCLUDE_PATH . '/partials/header.php';
 
 
 <!-- QUICK HELP STRIP -->
-<section class="quick-help-section" id="quick-help-sec" aria-label="Quick help and bulk order actions" data-reveal>
-  <div class="quick-help-container">
-    <div class="quick-help-bar">
-      <a class="quick-help-item quick-help-call" href="tel:<?= preg_replace('/\D+/', '', $bizPhone) ?>">
-        <span class="quick-help-icon"><i class="fa-solid fa-phone-volume" aria-hidden="true"></i></span>
-        <span class="quick-help-copy">
-          <span>Need Help? Call Us</span>
-          <strong><?= $bizPhone ?></strong>
-        </span>
-      </a>
-
-      <button class="quick-help-item quick-help-whatsapp" type="button" onclick="window.open('https://wa.me/<?= $bizWa ?>','_blank')">
-        <span class="quick-help-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></span>
-        <span class="quick-help-copy">
-          <strong>Chat with us on WhatsApp</strong>
-          <span>We are here to help!</span>
-        </span>
-      </button>
-
-      <a class="quick-help-item quick-help-download" href="/categories" aria-label="Download our brochure for all products">
-        <span class="quick-help-icon"><i class="fa-solid fa-download" aria-hidden="true"></i></span>
-        <span class="quick-help-copy">
-          <strong>Download Our Brochure</strong>
-          <span>For All Products</span>
-        </span>
-      </a>
-    </div>
-  </div>
-</section>
+<?php include INCLUDE_PATH . '/partials/quick-help.php'; ?>
 
 <!-- FOOTER -->
 <?php include INCLUDE_PATH . '/partials/site-footer.php'; ?>
