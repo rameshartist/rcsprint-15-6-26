@@ -119,11 +119,8 @@ class Auth
 
     public static function getProfile(int $userId): ?array
     {
-        $base = \Database::row(
-            "SELECT id, name, email, phone, company, created_at
-             FROM users WHERE id = ?",
-            [$userId]
-        );
+        try { $base=\Database::row("SELECT id,name,email,phone,company,avatar_path,created_at FROM users WHERE id=?",[$userId]); }
+        catch (\Throwable) { $base=\Database::row("SELECT id,name,email,phone,company,created_at FROM users WHERE id=?",[$userId]); }
         if (!$base) return null;
 
         $profile = [
@@ -132,6 +129,7 @@ class Auth
             'email'      => (string)$base['email'],
             'phone'      => (string)$base['phone'],
             'company'    => (string)($base['company'] ?? ''),
+            'avatar_path'=> (string)($base['avatar_path'] ?? ''),
             'created_at' => (string)($base['created_at'] ?? ''),
             'billing'    => null,
             'shipping'   => null,
@@ -494,6 +492,7 @@ class Auth
             'email'   => $user['email'],
             'phone'   => $user['phone'],
             'company' => $user['company'] ?? '',
+            'avatar_path' => $user['avatar_path'] ?? '',
         ];
     }
 

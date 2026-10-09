@@ -57,7 +57,7 @@ include INCLUDE_PATH . '/partials/header.php';
         <?php if (empty($businessProducts)): ?>
           <div class="business-empty-state"><strong>No products assigned yet</strong><span>Please check back soon or contact us for a custom quote.</span><a href="https://wa.me/<?= htmlspecialchars($bizWa) ?>" class="btn btn-green" target="_blank" rel="noopener">WhatsApp Us</a></div>
         <?php else: ?>
-          <div class="ym-grid ym-product-grid">
+          <div class="all-cat-grid" id="businessProductsGrid">
             <?php foreach ($businessProducts as $idx => $product):
               $name = (string)($product['name'] ?? 'Print Product');
               $slug = (string)($product['slug'] ?? '');
@@ -66,12 +66,10 @@ include INCLUDE_PATH . '/partials/header.php';
               $category = trim((string)($product['category_name'] ?? 'Print Product'));
               $price = (float)($product['min_price'] ?? 0);
             ?>
-            <article class="ym-card ym-product-card" data-reveal data-reveal-delay="<?= ($idx % 3) * 60 ?>">
-              <a class="ym-img ym-product-img" href="<?= htmlspecialchars($href) ?>">
-                <?php if ($img !== ''): ?><img src="<?= htmlspecialchars($img) ?>" alt="<?= htmlspecialchars($name) ?>" loading="lazy"><span class="ym-product-fallback" hidden><i class="fa-solid fa-print" aria-hidden="true"></i></span><?php else: ?><span class="ym-product-fallback"><i class="fa-solid fa-print" aria-hidden="true"></i></span><?php endif; ?>
-              </a>
-              <div class="ym-body"><div class="ym-cat"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><?= htmlspecialchars($category) ?></div><h3 class="ym-name"><?= htmlspecialchars($name) ?></h3><div class="ym-foot"><div><div class="ym-from">Starting from</div><div class="ym-price">₹<?= $price > 0 ? number_format($price) : '—' ?></div></div><a href="<?= htmlspecialchars($href) ?>" class="ym-order">VIEW</a></div></div>
-            </article>
+            <a class="all-cat-card all-cat-card-<?= htmlspecialchars(['purple','orange','green'][$idx%3]) ?>" href="<?= htmlspecialchars($href) ?>" data-reveal data-reveal-delay="<?= ($idx % 3) * 60 ?>">
+              <div class="all-cat-img"><?php if($img!==''):?><img src="<?= htmlspecialchars($img) ?>" alt="<?= htmlspecialchars($name) ?>" loading="lazy" onerror="this.src='https://placehold.co/400x300/EEF3FD/1A56E8?text=<?= urlencode($name) ?>'"><?php else:?><div class="shop-cat-fallback" aria-hidden="true">📦</div><?php endif;?></div>
+              <div class="all-cat-body"><h2><?= htmlspecialchars($name) ?></h2><strong><?= $price>0?'Starting from ₹'.number_format($price):'Price on request' ?></strong></div>
+            </a>
             <?php endforeach; ?>
           </div>
         <?php endif; ?>
@@ -79,8 +77,6 @@ include INCLUDE_PATH . '/partials/header.php';
     </section>
   </div>
 </main>
-<section class="quick-help-section" id="quick-help-sec" aria-label="Quick help and bulk order actions" data-reveal>
-  <div class="quick-help-container"><div class="quick-help-bar"><a class="quick-help-item quick-help-call" href="tel:<?= preg_replace('/\D+/', '', $bizPhone) ?>"><span class="quick-help-icon"><i class="fa-solid fa-phone-volume" aria-hidden="true"></i></span><span class="quick-help-copy"><span>Need Help? Call Us</span><strong><?= $bizPhone ?></strong></span></a><button class="quick-help-item quick-help-whatsapp" type="button" onclick="window.open('https://wa.me/<?= $bizWa ?>','_blank')"><span class="quick-help-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></span><span class="quick-help-copy"><strong>Chat with us on WhatsApp</strong><span>We are here to help!</span></span></button></div></div>
-</section>
+<?php include INCLUDE_PATH . '/partials/quick-help.php'; ?>
 <?php include INCLUDE_PATH . '/partials/site-footer.php'; ?>
 <?php include INCLUDE_PATH . '/partials/footer.php'; ?>
