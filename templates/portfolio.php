@@ -203,15 +203,7 @@ $pageHero = [
     </div>
   </section>
 
-  <section class="quick-help-section portfolio-quick-help" aria-label="Quick help and bulk order actions">
-    <div class="quick-help-container">
-      <div class="quick-help-bar">
-        <a class="quick-help-item quick-help-call" href="tel:<?= $bizPhoneHref ?>"><span class="quick-help-icon"><i class="fa-solid fa-phone-volume" aria-hidden="true"></i></span><span class="quick-help-copy"><span>Need Help? Call Us</span><strong><?= $bizPhone ?></strong></span></a>
-        <button class="quick-help-item quick-help-whatsapp" type="button" onclick="window.open('https://wa.me/<?= $bizWa ?>?text=<?= $waText ?>','_blank')"><span class="quick-help-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></span><span class="quick-help-copy"><strong>Chat with us on WhatsApp</strong><span>We are here to help!</span></span></button>
-        <a class="quick-help-item quick-help-download" href="/categories" aria-label="Download our brochure for all products"><span class="quick-help-icon"><i class="fa-solid fa-download" aria-hidden="true"></i></span><span class="quick-help-copy"><strong>Download Brochure</strong><span>For Bulk Orders</span></span></a>
-      </div>
-    </div>
-  </section>
+  <?php $quickHelpExtraClass='portfolio-quick-help'; include INCLUDE_PATH . '/partials/quick-help.php'; ?>
 
   <div class="portfolio-lightbox" id="portfolioLightbox" aria-hidden="true">
     <button class="portfolio-lightbox-close" type="button" aria-label="Close image gallery"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
