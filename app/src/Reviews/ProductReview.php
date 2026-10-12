@@ -19,6 +19,7 @@ class ProductReview
     {
         if (self::$tableReady !== null) return self::$tableReady;
         try {
+            try { \Database::query("ALTER TABLE users ADD COLUMN avatar_path VARCHAR(500) NULL AFTER company"); } catch (\Throwable) {}
             \Database::row('SELECT id FROM product_reviews LIMIT 1');
             self::$tableReady = true;
         } catch (\Throwable) {
@@ -78,7 +79,7 @@ class ProductReview
         $orderSql = self::reviewOrderSql();
         try {
             $rows = \Database::rows(
-                "SELECT pr.*, u.name AS customer_name, p.name AS product_name, p.slug AS product_slug
+                "SELECT pr.*, u.name AS customer_name, u.avatar_path AS customer_avatar, p.name AS product_name, p.slug AS product_slug
                  FROM product_reviews pr
                  LEFT JOIN users u ON u.id = pr.user_id
                  LEFT JOIN products p ON p.id = pr.product_id
@@ -113,7 +114,7 @@ class ProductReview
         $orderSql = self::reviewOrderSql();
         try {
             $rows = \Database::rows(
-                "SELECT pr.*, u.name AS customer_name, p.name AS product_name, p.slug AS product_slug
+                "SELECT pr.*, u.name AS customer_name, u.avatar_path AS customer_avatar, p.name AS product_name, p.slug AS product_slug
                  FROM product_reviews pr
                  LEFT JOIN users u ON u.id = pr.user_id
                  LEFT JOIN products p ON p.id = pr.product_id
@@ -475,6 +476,7 @@ class ProductReview
             'stars' => str_repeat('★', $rating) . str_repeat('☆', 5 - $rating),
             'customer_name' => $name,
             'customer_initials' => $initials,
+            'customer_avatar' => (string)($row['customer_avatar'] ?? ''),
             'comment' => trim((string)($row['comment'] ?? '')),
             'status' => (string)($row['status'] ?? self::PENDING),
             'is_featured' => (int)($row['is_featured'] ?? 0) === 1,
