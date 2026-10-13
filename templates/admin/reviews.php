@@ -51,9 +51,12 @@ async function loadReviews() {
     list.innerHTML = reviews.map(r => `
       <article class="admin-review-card" data-review-id="${Number(r.id || 0)}">
         <div class="admin-review-top">
-          <div>
+          <div class="admin-review-customer">
+            <span class="admin-review-avatar">${r.customer_avatar?`<img src="${escH(r.customer_avatar)}" alt="" loading="lazy">`:escH((r.customer_initials||'RC').slice(0,2))}</span>
+            <div>
             <strong>${escH(r.product_name || 'Product')}</strong>
             <span>${escH(r.customer_name || 'Customer')} · ${escH(r.customer_email || '')}</span>
+            </div>
           </div>
           <div class="admin-review-badges">
             <span class="admin-review-stars" aria-label="${Number(r.rating || 0)} out of 5 stars">${escH(r.stars || '★★★★★')}</span>
