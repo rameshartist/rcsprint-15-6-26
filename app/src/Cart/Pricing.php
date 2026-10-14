@@ -81,14 +81,19 @@ class Pricing
         $scopeCategoryId = (int)($coupon['category_id'] ?? 0);
         $eligibleSubtotal = $subtotal;
         if ($scopeType === 'category' && $scopeCategoryId > 0) {
+            $selectedProductIds = [];
+            try {
+                $selectedProductIds = array_map('intval', array_column(\Database::rows("SELECT product_id FROM coupon_products WHERE coupon_id=?", [(int)$coupon['id']]), 'product_id'));
+            } catch (\Throwable) {}
             $eligibleSubtotal = 0.0;
             foreach ($items as $item) {
-                if ((int)($item['category_id'] ?? 0) === $scopeCategoryId) {
+                $productId = (int)($item['product_id'] ?? 0);
+                if ((int)($item['category_id'] ?? 0) === $scopeCategoryId && (!$selectedProductIds || in_array($productId, $selectedProductIds, true))) {
                     $eligibleSubtotal += (float)($item['total_price'] ?? 0);
                 }
             }
             if ($eligibleSubtotal <= 0) {
-                return ['ok' => false, 'msg' => 'Coupon is valid only for selected category products.'];
+                return ['ok' => false, 'msg' => 'Coupon is valid only for its selected products.'];
             }
         }
 
