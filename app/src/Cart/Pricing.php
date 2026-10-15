@@ -72,6 +72,14 @@ class Pricing
 
         if (!$coupon) return ['ok' => false, 'msg' => 'Invalid coupon code.'];
 
+        $orderNumber = (int)($coupon['order_number'] ?? 0);
+        if ($orderNumber > 0) {
+            $user = \Auth\Auth::user();
+            if (!$user) return ['ok'=>false,'msg'=>'Please login to use this customer order offer.'];
+            $completed = (int)(\Database::row("SELECT COUNT(*) c FROM orders WHERE user_id=? AND payment_status='paid' AND status<>'cancelled'",[(int)$user['id']])['c']??0);
+            if ($completed !== $orderNumber - 1) return ['ok'=>false,'msg'=>'This offer is valid only on your '.$orderNumber.($orderNumber===1?'st':($orderNumber===2?'nd':'rd')).' order.'];
+        }
+
         $today = date('Y-m-d');
         if ($coupon['valid_from']  && $coupon['valid_from']  > $today)
             return ['ok' => false, 'msg' => 'Coupon not yet active.'];
@@ -81,14 +89,19 @@ class Pricing
         $scopeCategoryId = (int)($coupon['category_id'] ?? 0);
         $eligibleSubtotal = $subtotal;
         if ($scopeType === 'category' && $scopeCategoryId > 0) {
+            $selectedProductIds = [];
+            try {
+                $selectedProductIds = array_map('intval', array_column(\Database::rows("SELECT product_id FROM coupon_products WHERE coupon_id=?", [(int)$coupon['id']]), 'product_id'));
+            } catch (\Throwable) {}
             $eligibleSubtotal = 0.0;
             foreach ($items as $item) {
-                if ((int)($item['category_id'] ?? 0) === $scopeCategoryId) {
+                $productId = (int)($item['product_id'] ?? 0);
+                if ((int)($item['category_id'] ?? 0) === $scopeCategoryId && (!$selectedProductIds || in_array($productId, $selectedProductIds, true))) {
                     $eligibleSubtotal += (float)($item['total_price'] ?? 0);
                 }
             }
             if ($eligibleSubtotal <= 0) {
-                return ['ok' => false, 'msg' => 'Coupon is valid only for selected category products.'];
+                return ['ok' => false, 'msg' => 'Coupon is valid only for its selected products.'];
             }
         }
 
@@ -97,9 +110,9 @@ class Pricing
         if ($coupon['max_uses'] > 0 && $coupon['used_count'] >= $coupon['max_uses'])
             return ['ok' => false, 'msg' => 'Coupon usage limit reached.'];
 
-        $discount = $coupon['discount_type'] === 'percent'
+        $discount = $coupon['discount_type'] === 'free_shipping' ? 0.0 : ($coupon['discount_type'] === 'percent'
             ? round($eligibleSubtotal * $coupon['discount_value'] / 100)
-            : (float)$coupon['discount_value'];
+            : (float)$coupon['discount_value']);
 
         return [
             'ok'       => true,

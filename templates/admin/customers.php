@@ -80,6 +80,7 @@ const colorFor = name => {
   let h = 0; for (const ch of String(name || '')) h = ch.charCodeAt(0) + ((h << 5) - h);
   return colors[Math.abs(h) % colors.length];
 };
+const avatarHtml = c => c.avatar_path ? `<img src="${escH(c.avatar_path)}" alt="" loading="lazy">` : escH(initials(c.name));
 
 async function loadCustomerTemplates() {
   try {
@@ -154,7 +155,7 @@ function renderCustomers() {
     const phone = digits(c.phone);
     return `<article class="crm-card crm-card--${tone}">
       <button class="crm-card-main" type="button" onclick="openCustomerDrawer(${Number(c.id)})">
-        <span class="crm-avatar" style="background:${colorFor(c.name)}">${escH(initials(c.name))}</span>
+        <span class="crm-avatar" style="background:${colorFor(c.name)}">${avatarHtml(c)}</span>
         <span class="crm-info"><strong>${escH(c.name || 'Customer')}</strong><small>${escH(c.customer_code || 'Customer ID pending')} · ${escH(c.company || c.email || 'No company')}</small><em>${escH(c.phone || '-')} ${c.email ? '· ' + escH(c.email) : ''}</em></span>
         <span class="crm-value"><b>${money(c.total_spent)}</b><small>${Number(c.order_count||0)} order(s)</small></span>
       </button>
@@ -172,11 +173,11 @@ function openCustomerDrawer(id) {
   const c = CRM_CUSTOMERS.find(x => Number(x.id) === Number(id));
   if (!c) return;
   const recent = c.recent_orders || [];
-  document.getElementById('crmDrawerBody').innerHTML = `<div class="crm-drawer-head"><span class="crm-avatar crm-avatar--lg" style="background:${colorFor(c.name)}">${escH(initials(c.name))}</span><div><h2>${escH(c.name || 'Customer')}</h2><p>${escH(c.company || 'No company added')}</p></div></div>
+  document.getElementById('crmDrawerBody').innerHTML = `<div class="crm-drawer-head"><span class="crm-avatar crm-avatar--lg" style="background:${colorFor(c.name)}">${avatarHtml(c)}</span><div><h2>${escH(c.name || 'Customer')}</h2><p>${escH(c.company || 'No company added')}</p></div></div>
   <div class="crm-drawer-grid"><article><span>Total Spent</span><strong>${money(c.total_spent)}</strong></article><article><span>Orders</span><strong>${Number(c.order_count||0)}</strong></article><article><span>Avg Order</span><strong>${money(c.avg_order_value)}</strong></article><article><span>Last Order</span><strong>${escH(rel(c.last_order_at))}</strong></article></div>
   <section class="crm-drawer-section"><h3>Contact</h3><p><b>${escH(c.customer_code || 'Customer ID pending')}</b><br>${escH(c.phone || '-')}<br>${escH(c.email || '-')}</p><div class="crm-drawer-actions"><button onclick="openCustomerChat(${Number(c.id)})">Open WhatsApp</button><button onclick="sendWa(${Number(c.id)}, 'reorder')">Reorder WhatsApp</button><button onclick="sendWa(${Number(c.id)}, 'upsell')">Upsell Message</button><a href="/admin/orders?search=${encodeURIComponent(c.phone || c.email || c.name || '')}">View Orders</a><button class="crm-danger" onclick="deleteCustomer(${Number(c.id)})">Delete Customer</button></div></section>
   <section class="crm-drawer-section"><h3>Sales Insight</h3><p><b>${escH(upsellText(c))}</b><br>Last product: ${escH(c.last_product || 'No product yet')}<br>Joined: ${escH(dt(c.created_at))}</p></section>
-  <section class="crm-drawer-section"><h3>Recent Orders</h3>${recent.length ? recent.map(o=>`<a class="crm-order-row" href="/admin/orders?search=${encodeURIComponent(o.order_id)}"><span>#${escH(o.order_id)}</span><b>${money(o.total_amount)}</b><em>${escH(o.status)}</em></a>`).join('') : '<p>No orders yet. Send a first-order offer.</p>'}</section>`;
+  <section class="crm-drawer-section"><h3>Recent Orders</h3>${recent.length ? recent.map(o=>`<a class="crm-order-row" href="/admin/orders?search=${encodeURIComponent(o.order_id)}"><span>${escH(o.order_id)}</span><b>${money(o.total_amount)}</b><em>${escH(o.status)}</em></a>`).join('') : '<p>No orders yet. Send a first-order offer.</p>'}</section>`;
   document.getElementById('crmDrawer').classList.add('open');
   document.getElementById('crmDrawer').setAttribute('aria-hidden','false');
 }
