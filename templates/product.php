@@ -15,6 +15,7 @@ try {
 
 // Design fee from admin settings (Admin → Settings → design_fee)
 $designFee = (float)($product['design_fee'] ?? ($settingsMap['design_fee'] ?? 0));
+$productVideo = trim((string)(($product['video_path']??'') ?: ($product['video_url'] ?? '')));
 
 // Gallery
 $imgs       = $product['images'] ?? [];
@@ -77,6 +78,8 @@ if ($reviewCount === 0 && !empty($productReviews)) {
 }
 $reviewStarCount = $reviewCount > 0 ? max(1, min(5, (int)round($reviewAverage))) : 0;
 $reviewStars = str_repeat('★', $reviewStarCount) . str_repeat('☆', 5 - $reviewStarCount);
+$campaignCoupon = strtoupper(trim((string)($_GET['coupon'] ?? '')));
+if ($campaignCoupon !== '' && !preg_match('/^[A-Z0-9_-]{2,40}$/',$campaignCoupon)) $campaignCoupon='';
 $productFaqs = [];
 try { $productFaqs = \Faq\FaqManager::listByPage('product_detail'); } catch (\Throwable) { $productFaqs = []; }
 if (!$productFaqs) {
@@ -160,6 +163,7 @@ include INCLUDE_PATH . '/partials/header.php';
              src="<?= htmlspecialchars($primaryImg) ?>"
              alt="<?= htmlspecialchars($product['name']) ?>"
              onerror="this.src='https://placehold.co/600x600/EEF3FD/1A56E8?text=<?= urlencode($product['name']) ?>'">
+        <div class="pd-main-video" id="pdMainVideo" hidden></div>
       </div>
 
       <?php if (count($imgs) > 1): ?>
@@ -181,8 +185,7 @@ include INCLUDE_PATH . '/partials/header.php';
       <?php endif; ?>
 
       <div class="pd-gallery-actions" aria-label="Product previews">
-        <button type="button"><i class="fa-solid fa-rotate" aria-hidden="true"></i> 360° View</button>
-        <button type="button"><i class="fa-regular fa-circle-play" aria-hidden="true"></i> Video Preview</button>
+        <?php if($productVideo!==''):?><button type="button" onclick="showProductVideo()"><i class="fa-regular fa-circle-play" aria-hidden="true"></i> Video Preview</button><?php endif;?>
       </div>
 
     </div><!-- /pd-gallery -->
@@ -347,6 +350,7 @@ include INCLUDE_PATH . '/partials/header.php';
 
       <!-- ── ACTION BUTTONS ── -->
       <div class="pd-action-stack">
+        <em id="orderHint" class="pd-order-hint pd-order-hint--above" aria-live="polite">Select quantity to enable Add to Cart.</em>
         <div class="pd-action-row">
           <button class="btn btn-blue btn-full" onclick="addToCart()" id="addCartBtn">
             <i class="fa-solid fa-cart-plus" aria-hidden="true"></i> ADD TO CART
@@ -359,9 +363,8 @@ include INCLUDE_PATH . '/partials/header.php';
           </button>
         </div>
         <div class="pd-checkout-note pd-delivery-row">
-          <span><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Delivery in 3 - 5 Working Days</span>
-          <small><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Free Delivery on Orders Above ₹999</small>
-          <em id="orderHint" class="pd-order-hint" aria-live="polite"></em>
+          <?php if(!empty($product['show_delivery_info'])&&trim((string)($product['delivery_info']??''))!==''):?><span><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> <?= htmlspecialchars((string)$product['delivery_info']) ?></span><?php endif;?>
+          <?php if(!empty($product['show_free_delivery_info'])&&trim((string)($product['free_delivery_info']??''))!==''):?><small><i class="fa-solid fa-circle-check" aria-hidden="true"></i> <?= htmlspecialchars((string)$product['free_delivery_info']) ?></small><?php endif;?>
         </div>
       </div>
 
@@ -424,7 +427,7 @@ include INCLUDE_PATH . '/partials/header.php';
               <?php foreach (array_slice($productReviews, 0, 3) as $review): ?>
               <article class="pd-review-card">
                 <div class="pd-review-person">
-                  <span class="pd-review-avatar" aria-hidden="true"><?= htmlspecialchars($review['customer_initials'] ?? 'RC') ?></span>
+                  <span class="pd-review-avatar" aria-hidden="true"><?php if(!empty($review['customer_avatar'])):?><img src="<?= htmlspecialchars((string)$review['customer_avatar']) ?>" alt=""><?php else:?><?= htmlspecialchars($review['customer_initials'] ?? 'RC') ?><?php endif;?></span>
                   <div><strong><?= htmlspecialchars($review['customer_name'] ?? 'RCS Customer') ?></strong><span>Verified Customer</span></div>
                 </div>
                 <div class="pd-review-stars" aria-label="<?= (int)($review['rating'] ?? 0) ?> out of 5 stars"><?= htmlspecialchars($review['stars'] ?? '') ?></div>
@@ -451,7 +454,6 @@ include INCLUDE_PATH . '/partials/header.php';
   <section class="ym-section" aria-labelledby="relatedProductTitle">
     <div class="ym-head">
       <h2 id="relatedProductTitle" class="ym-title">You May <span>Also Like</span></h2>
-      <a href="/categories" class="ym-view-all">View All Products</a>
     </div>
 
     <div class="ym-grid ym-product-grid">
@@ -474,7 +476,7 @@ include INCLUDE_PATH . '/partials/header.php';
           <?php endif; ?>
         </a>
         <div class="ym-body">
-          <div class="ym-cat"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><?= htmlspecialchars($relatedCategory) ?></div>
+          <div class="ym-cat"><?= htmlspecialchars($relatedCategory) ?></div>
           <h3 class="ym-name"><?= htmlspecialchars($relatedName) ?></h3>
           <div class="ym-foot">
             <div>
@@ -505,6 +507,7 @@ const IS_LOGGED_IN = <?= ($user ?? null) ? 'true' : 'false' ?>;
 const QUALITIES   = <?= json_encode($qualities) ?>;
 const DESIGN_FEE  = <?= (float)$designFee ?>;
 const PRODUCT_SLUG = <?= json_encode((string)($product['slug'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+const PRODUCT_VIDEO = <?= json_encode($productVideo, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
 try {
   const key = 'rcs_recent_products';
@@ -530,21 +533,21 @@ let currentBasePrice   = 0;
 
 function refreshOrderReadiness() {
   const hasQty = !!selectedQty;
+  const hasDesign = designChoice === 'rcs' || uploadDesignLater || !!artworkId;
   const addBtn = document.getElementById('addCartBtn');
   const hint = document.getElementById('orderHint');
 
-  if (addBtn) addBtn.disabled = !hasQty;
+  if (addBtn) addBtn.disabled = !(hasQty && hasDesign);
 
   if (hint) {
-    hint.textContent = hasQty
-      ? 'Looks good. You can now add to cart.'
-      : 'Select quantity to enable Add to Cart.';
+    hint.textContent = !hasQty ? 'Select quantity to enable Add to Cart.' : (!hasDesign ? 'Upload a design or choose Upload Later to enable Add to Cart.' : 'Ready to add to cart.');
   }
 }
 
 // Gallery
 function switchImg(url, el) {
   const img = document.getElementById('pdMainImg');
+  const video=document.getElementById('pdMainVideo');if(video){video.hidden=true;video.innerHTML='';}img.hidden=false;
   img.style.opacity = '0.6';
   setTimeout(() => { img.src = url; img.style.opacity = '1'; }, 150);
   document.querySelectorAll('.pd-th').forEach(t => t.classList.remove('act'));
@@ -553,6 +556,8 @@ function switchImg(url, el) {
     el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }
 }
+
+function showProductVideo(){if(!PRODUCT_VIDEO)return;const img=document.getElementById('pdMainImg'),box=document.getElementById('pdMainVideo');img.hidden=true;box.hidden=false;box.innerHTML=PRODUCT_VIDEO.includes('youtube.com/embed/')?`<iframe src="${PRODUCT_VIDEO}?autoplay=1" title="Product video" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`:`<video src="${PRODUCT_VIDEO}" controls autoplay playsinline></video>`;}
 
 function slideProductGallery(dir) {
   const thumbs = Array.from(document.querySelectorAll('.pd-th'));
@@ -670,7 +675,7 @@ function selDesignOpt(choice) {
 
   if (uploadOpt) uploadOpt.classList.toggle('sel', designChoice === 'upload');
   if (rcsOpt) rcsOpt.classList.toggle('sel', designChoice === 'rcs');
-  if (uploadPanel) uploadPanel.style.display = designChoice === 'upload' ? 'block' : 'none';
+  if (uploadPanel) uploadPanel.style.display = 'block';
   if (rcsPanel) rcsPanel.style.display = designChoice === 'rcs' ? 'block' : 'none';
 
   calcPrice();
@@ -725,6 +730,7 @@ async function processFile(file) {
           <button onclick="removeFile()" style="color:var(--red);font-size:18px;background:none;border:none;cursor:pointer">✕</button>
         </div>`;
       toast('Artwork uploaded!', 'success');
+      refreshOrderReadiness();
     } else {
       toast(data.msg || 'Upload failed', 'error');
     }
@@ -738,6 +744,7 @@ function removeFile() {
   uploadedFileName = null;
   document.getElementById('uploadPreview').innerHTML = '';
   document.getElementById('artworkFile').value = '';
+  refreshOrderReadiness();
 }
 
 function toggleUploadLater(checked) {
@@ -756,6 +763,7 @@ function toggleUploadLater(checked) {
     document.getElementById('artworkFile').value = '';
     toast('You can upload your design later from My Account after placing the order.', 'info');
   }
+  refreshOrderReadiness();
 }
 
 // Add to Cart
@@ -786,6 +794,7 @@ async function addToCart(opts = {}) {
         design_choice: designChoice,
         design_brief: uploadDesignLater ? 'Customer selected: I will upload design later.' : '',
         notes: uploadDesignLater ? 'User will upload design later from My Account order detail.' : '',
+        upload_later: uploadDesignLater,
         artwork_id: uploadDesignLater ? null : artworkId
       })
     });
@@ -869,6 +878,9 @@ function validateOrder() {
   if (!selectedQty) {
     return { ok: false, msg: 'Please select a quantity' };
   }
+  if (designChoice === 'upload' && !uploadDesignLater && !artworkId) {
+    return { ok: false, msg: 'Please upload a design or select Upload Design Later' };
+  }
 
   return { ok: true };
 }
@@ -927,6 +939,7 @@ function switchProductTab(tab, btn) {
 }
 
 // Init
+<?php if($campaignCoupon!==''): ?>localStorage.setItem('rcsCampaignCoupon',<?= json_encode($campaignCoupon) ?>);<?php endif; ?>
 reloadQtySlabs();
 refreshOrderReadiness();
 </script>
