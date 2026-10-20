@@ -35,10 +35,10 @@ class Mailer
         self::send(
             $order['customer_email'],
             $order['customer_name'],
-            "Order Confirmed #{$order['order_id']} — {$biz['name']}",
+            "Order Confirmed {$order['order_id']} — {$biz['name']}",
             self::wrap("
                 <h2>Order Confirmed! 🖨️</h2>
-                <p>Hi {$order['customer_name']}, your order <strong>#{$order['order_id']}</strong> has been received.</p>
+                <p>Hi {$order['customer_name']}, your order <strong>{$order['order_id']}</strong> has been received.</p>
                 {$itemsHtml}
                 " . self::totalsTable($order) . "
                 <p>We'll update you at each stage. Questions? WhatsApp us at {$biz['whatsapp']}.</p>
@@ -53,7 +53,7 @@ class Mailer
         self::send(
             $order['customer_email'],
             $order['customer_name'],
-            "Payment Confirmed ✅ — #{$order['order_id']}",
+            "Payment Confirmed ✅ — {$order['order_id']}",
             self::wrap("
                 <h2>Payment Received! ✅</h2>
                 <p>Hi {$order['customer_name']}, your payment of <strong>₹" . number_format($order['total_amount']) . "</strong> has been confirmed.</p>
@@ -80,12 +80,12 @@ class Mailer
         self::send(
             $order['customer_email'],
             $order['customer_name'],
-            "Order Update #{$order['order_id']}: " . ucfirst($order['status']),
+            "Order Update {$order['order_id']}: " . ucfirst($order['status']),
             self::wrap("
                 <h2>Order Update 📋</h2>
                 <p>Hi {$order['customer_name']},</p>
                 <p>{$msg}</p>
-                <p><strong>Order ID:</strong> #{$order['order_id']}<br>
+                <p><strong>Order ID:</strong> {$order['order_id']}<br>
                    <strong>Status:</strong> " . ucfirst($order['status']) . "</p>
                 <a href='{$biz['url']}/my-orders' class='btn'>View Order →</a>
             ")
