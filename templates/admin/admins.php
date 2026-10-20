@@ -10,11 +10,11 @@ $canManageAdmins = \Auth\Auth::isSuperAdmin();
     <div class="adm-pt" style="margin:0">Admins</div>
     <div style="font-size:12px;color:var(--text2);margin-top:4px">Create admin users and manage backend access.</div>
   </div>
-  <span id="admCount" style="font-size:12px;color:var(--text2)"></span>
+  <div style="display:flex;align-items:center;gap:10px"><span id="admCount" style="font-size:14px;color:var(--text2)"></span><?php if($canManageAdmins): ?><button class="btn btn-blue" type="button" onclick="toggleAdminCreate(true)">+ Add Admin</button><?php endif; ?></div>
 </div>
 
 <?php if ($canManageAdmins): ?>
-<div class="fsec" style="margin-bottom:14px">
+<div class="fsec admin-create-panel" id="adminCreatePanel" style="margin-bottom:14px" hidden>
   <div class="fsec-t">➕ Add New Admin</div>
   <div class="f2">
     <div class="fg"><label>Name *</label><input class="fi" id="adm-name" placeholder="Admin name"></div>
@@ -32,8 +32,10 @@ $canManageAdmins = \Auth\Auth::isSuperAdmin();
     </div>
     <div></div>
   </div>
-  <button class="btn btn-blue" onclick="createAdmin()" style="padding:10px 16px;border-radius:9px">Create Admin</button>
+  <div style="display:flex;gap:8px"><button class="btn btn-blue" onclick="createAdmin()" style="padding:10px 16px;border-radius:9px">Create Admin</button><button class="btn btn-outline" type="button" onclick="toggleAdminCreate(false)">Cancel</button></div>
 </div>
+
+<div class="modal-bg" id="m-adm-edit"><div class="modal-box"><div class="modal-pill"></div><div class="modal-hdr"><div class="modal-ttl">Edit Admin Profile</div><button class="modal-cls" onclick="closeAdminEdit()">✕</button></div><div class="modal-bdy"><input type="hidden" id="edit-adm-id"><div class="fg"><label>Name *</label><input class="fi" id="edit-adm-name"></div><div class="fg"><label>Email *</label><input class="fi" type="email" id="edit-adm-email"></div><div class="fg"><label>Mobile *</label><input class="fi" id="edit-adm-mobile"></div><div class="fg"><label>Role *</label><select class="fi" id="edit-adm-role"><option value="admin">Admin</option><option value="super">Super Admin</option></select></div><button class="btn btn-blue btn-full" onclick="saveAdminProfile()">Save Admin Details</button></div></div></div>
 <?php else: ?>
 <div class="fsec" style="margin-bottom:14px;border-left:4px solid #f59e0b"><strong>Read-only access</strong><br><span style="font-size:12px;color:var(--text2)">Only Super Admin can add, edit or remove admin users.</span></div>
 <?php endif; ?>
@@ -70,6 +72,8 @@ const CURRENT_ADMIN_ID = Number('<?= (int)($currentAdmin['id'] ?? 0) ?>');
 const CAN_MANAGE_ADMINS = <?= $canManageAdmins ? 'true' : 'false' ?>;
 let passAdminId = 0;
 let passAdminName = '';
+let ADMIN_ROWS = [];
+function toggleAdminCreate(show){document.getElementById('adminCreatePanel').hidden=!show;if(show)document.getElementById('adm-name')?.focus();}
 
 function escH(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function fmtDate(s){ if(!s) return '—'; const d=new Date(s); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}); }
@@ -79,6 +83,7 @@ function togglePass(id, btn){ const inp=document.getElementById(id); if(!inp) re
 async function loadAdmins() {
   const res = await fetch('/admin/api/admin-users', { credentials:'same-origin' }).then(r=>r.json());
   const admins = res.admins || [];
+  ADMIN_ROWS = admins;
   document.getElementById('admCount').textContent = admins.length + ' admin users';
   if (!admins.length) {
     document.getElementById('adminsWrap').innerHTML = `<div style="text-align:center;padding:40px;color:var(--text2)"><div style="font-size:40px;margin-bottom:8px">🛡️</div><div>No admins found</div></div>`;
@@ -99,10 +104,14 @@ async function loadAdmins() {
           <div style="font-size:11px;color:var(--text3)">Last login: ${fmtDate(a.last_login)}</div>
         </div>
       </div>
-      ${CAN_MANAGE_ADMINS ? `<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-xs js-pass-btn" data-id="${Number(a.id)}" data-name="${escH(a.name || 'Admin')}">🔑 Change Password</button><button class="btn btn-red btn-xs js-remove-btn" data-id="${Number(a.id)}" data-name="${escH(a.name || 'Admin')}" ${Number(a.id)===CURRENT_ADMIN_ID ? 'disabled title="Cannot remove current login"' : ''}>🗑️ Remove</button></div>` : ''}
+      ${CAN_MANAGE_ADMINS ? `<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-xs js-edit-btn" data-id="${Number(a.id)}">Edit Profile</button><button class="btn btn-outline btn-xs js-pass-btn" data-id="${Number(a.id)}" data-name="${escH(a.name || 'Admin')}">Change Password</button><button class="btn btn-red btn-xs js-remove-btn" data-id="${Number(a.id)}" data-name="${escH(a.name || 'Admin')}" ${Number(a.id)===CURRENT_ADMIN_ID ? 'disabled title="Cannot remove current login"' : ''}>Remove</button></div>` : ''}
     </div>
   `).join('');
 }
+
+function openAdminEdit(id){const a=ADMIN_ROWS.find(row=>Number(row.id)===Number(id));if(!a)return;document.getElementById('edit-adm-id').value=a.id;document.getElementById('edit-adm-name').value=a.name||'';document.getElementById('edit-adm-email').value=a.email||'';document.getElementById('edit-adm-mobile').value=a.mobile||'';document.getElementById('edit-adm-role').value=a.role==='super'?'super':'admin';document.getElementById('m-adm-edit').classList.add('show');}
+function closeAdminEdit(){document.getElementById('m-adm-edit').classList.remove('show');}
+async function saveAdminProfile(){const id=Number(document.getElementById('edit-adm-id').value);const payload={name:document.getElementById('edit-adm-name').value.trim(),email:document.getElementById('edit-adm-email').value.trim(),mobile:document.getElementById('edit-adm-mobile').value.trim(),role:document.getElementById('edit-adm-role').value};if(!payload.name||!payload.email||!payload.mobile){toast('Complete all admin details','error');return;}const res=await fetch(`/admin/api/admin-users/${id}`,{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':CSRF},credentials:'same-origin',body:JSON.stringify(payload)}).then(r=>r.json());if(!res.ok){toast(res.msg||'Could not update admin','error');return;}toast('Admin profile updated','success');closeAdminEdit();loadAdmins();}
 
 async function createAdmin() {
   if (!CAN_MANAGE_ADMINS) { toast('Only Super Admin can create admin users', 'error'); return; }
@@ -202,6 +211,7 @@ function setupAdminActions() {
       openPasswordModal(Number(passBtn.dataset.id || 0), passBtn.dataset.name || 'Admin');
       return;
     }
+    const editBtn=e.target.closest('.js-edit-btn');if(editBtn){openAdminEdit(Number(editBtn.dataset.id||0));return;}
     const remBtn = e.target.closest('.js-remove-btn');
     if (remBtn) {
       removeAdmin(Number(remBtn.dataset.id || 0), remBtn.dataset.name || 'Admin');

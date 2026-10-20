@@ -1,0 +1,9 @@
+<?php $code=(string)$coupon['code'];$pageTitle=$code.' Offers — RCS Graphic';include INCLUDE_PATH.'/partials/head.php';include INCLUDE_PATH.'/partials/header.php'; ?>
+<main class="all-cat-page coupon-products-page">
+  <section class="coupon-products-hero"><div class="container"><span>Limited-time offer</span><h1><?= htmlspecialchars($code) ?></h1><p><?= htmlspecialchars((string)($coupon['description']?:'Discount available on selected products.')) ?></p><strong><?= $coupon['discount_type']==='percent'?number_format((float)$coupon['discount_value'],0).'% OFF':'₹'.number_format((float)$coupon['discount_value'],0).' OFF' ?></strong></div></section>
+  <div class="container all-cat-content"><section class="all-cat-results"><div class="all-cat-toolbar"><p><?= count($couponProducts) ?> discounted product(s)</p></div><div class="all-cat-grid">
+  <?php foreach($couponProducts as $i=>$p):$price=(float)($p['min_price']??0);$productHref='/product/'.rawurlencode((string)$p['slug']).((int)($coupon['order_number']??0)===0?'?coupon='.rawurlencode($code):'');?><a class="all-cat-card all-cat-card-<?= $i%2?'orange':'purple' ?>" href="<?= htmlspecialchars($productHref,ENT_QUOTES) ?>"><div class="all-cat-img"><?php if(!empty($p['primary_image'])):?><img src="<?= htmlspecialchars((string)$p['primary_image'],ENT_QUOTES) ?>" alt="<?= htmlspecialchars((string)$p['name'],ENT_QUOTES) ?>" loading="lazy"><?php endif;?></div><div class="all-cat-body"><h2><?= htmlspecialchars((string)$p['name']) ?></h2><strong><?= $price>0?'Starting from ₹'.number_format($price):'Price on request' ?></strong><small>Use code <?= htmlspecialchars($code) ?> in cart</small></div></a><?php endforeach;?>
+  </div></section></div>
+</main>
+<?php if((int)($coupon['order_number']??0)===0): ?><script>localStorage.setItem('rcsCampaignCoupon',<?= json_encode($code) ?>);</script><?php endif; ?>
+<?php include INCLUDE_PATH.'/partials/site-footer.php';include INCLUDE_PATH.'/partials/footer.php'; ?>
