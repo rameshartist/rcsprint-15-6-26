@@ -12,6 +12,7 @@ include __DIR__ . '/layout.php';
       <p>Track customer value, follow up faster, and find repeat-order opportunities from one clean command center.</p>
     </div>
     <div class="crm-hero-actions">
+      <button class="crm-btn crm-btn--primary" type="button" onclick="toggleAddCustomer(true)">+ Add Customer</button>
       <button class="crm-btn crm-btn--ghost" type="button" onclick="exportCustomerCsv()">⬇ Export</button>
       <a class="crm-btn crm-btn--primary" href="/admin/orders">View Orders</a>
     </div>
@@ -56,11 +57,16 @@ include __DIR__ . '/layout.php';
   </div>
 </aside>
 
+<aside class="crm-drawer" id="addCustomerDrawer" aria-hidden="true"><div class="crm-drawer-panel"><button class="crm-drawer-close" type="button" onclick="toggleAddCustomer(false)" aria-label="Close">×</button><div class="crm-drawer-head"><div><h2>Add Customer</h2><p>Create the same customer account used on the storefront.</p></div></div><section class="crm-drawer-section"><div class="fg"><label>Full Name *</label><input class="fi" id="new-customer-name"></div><div class="fg"><label>Email *</label><input class="fi" type="email" id="new-customer-email"></div><div class="fg"><label>Mobile *</label><input class="fi" id="new-customer-phone"></div><div class="fg"><label>Company</label><input class="fi" id="new-customer-company"></div><div class="fg"><label>Password *</label><input class="fi" type="password" id="new-customer-password" placeholder="Defaults to mobile number"></div><button class="crm-btn crm-btn--primary" type="button" onclick="createCustomer()">Create Customer</button></section></div></aside>
+
 <script>
 let CRM_CUSTOMERS = [];
 let CRM_FILTER = 'all';
 let CRM_TEMPLATES = {};
 const CRM_WA = '<?= htmlspecialchars($bizSettings['biz_whatsapp'] ?? '') ?>';
+const CRM_CSRF = '<?= htmlspecialchars($csrf ?? '') ?>';
+function toggleAddCustomer(show){const el=document.getElementById('addCustomerDrawer');el.classList.toggle('open',show);el.setAttribute('aria-hidden',show?'false':'true');if(show)document.getElementById('new-customer-name').focus();}
+async function createCustomer(){const phone=digits(document.getElementById('new-customer-phone').value),payload={name:document.getElementById('new-customer-name').value.trim(),email:document.getElementById('new-customer-email').value.trim(),phone,company:document.getElementById('new-customer-company').value.trim(),password:document.getElementById('new-customer-password').value||phone};const res=await fetch('/admin/api/customers',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':CRM_CSRF},credentials:'same-origin',body:JSON.stringify(payload)}).then(r=>r.json());if(!res.ok){alert(res.msg||'Could not create customer');return;}toggleAddCustomer(false);['new-customer-name','new-customer-email','new-customer-phone','new-customer-company','new-customer-password'].forEach(id=>document.getElementById(id).value='');loadCustomers();}
 const money = n => '₹' + Number(n || 0).toLocaleString('en-IN');
 const escH = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const digits = s => String(s || '').replace(/\D/g,'');
@@ -80,6 +86,7 @@ const colorFor = name => {
   let h = 0; for (const ch of String(name || '')) h = ch.charCodeAt(0) + ((h << 5) - h);
   return colors[Math.abs(h) % colors.length];
 };
+const avatarHtml = c => c.avatar_path ? `<img src="${escH(c.avatar_path)}" alt="" loading="lazy">` : escH(initials(c.name));
 
 async function loadCustomerTemplates() {
   try {
@@ -154,7 +161,7 @@ function renderCustomers() {
     const phone = digits(c.phone);
     return `<article class="crm-card crm-card--${tone}">
       <button class="crm-card-main" type="button" onclick="openCustomerDrawer(${Number(c.id)})">
-        <span class="crm-avatar" style="background:${colorFor(c.name)}">${escH(initials(c.name))}</span>
+        <span class="crm-avatar" style="background:${colorFor(c.name)}">${avatarHtml(c)}</span>
         <span class="crm-info"><strong>${escH(c.name || 'Customer')}</strong><small>${escH(c.customer_code || 'Customer ID pending')} · ${escH(c.company || c.email || 'No company')}</small><em>${escH(c.phone || '-')} ${c.email ? '· ' + escH(c.email) : ''}</em></span>
         <span class="crm-value"><b>${money(c.total_spent)}</b><small>${Number(c.order_count||0)} order(s)</small></span>
       </button>
@@ -172,11 +179,11 @@ function openCustomerDrawer(id) {
   const c = CRM_CUSTOMERS.find(x => Number(x.id) === Number(id));
   if (!c) return;
   const recent = c.recent_orders || [];
-  document.getElementById('crmDrawerBody').innerHTML = `<div class="crm-drawer-head"><span class="crm-avatar crm-avatar--lg" style="background:${colorFor(c.name)}">${escH(initials(c.name))}</span><div><h2>${escH(c.name || 'Customer')}</h2><p>${escH(c.company || 'No company added')}</p></div></div>
+  document.getElementById('crmDrawerBody').innerHTML = `<div class="crm-drawer-head"><span class="crm-avatar crm-avatar--lg" style="background:${colorFor(c.name)}">${avatarHtml(c)}</span><div><h2>${escH(c.name || 'Customer')}</h2><p>${escH(c.company || 'No company added')}</p></div></div>
   <div class="crm-drawer-grid"><article><span>Total Spent</span><strong>${money(c.total_spent)}</strong></article><article><span>Orders</span><strong>${Number(c.order_count||0)}</strong></article><article><span>Avg Order</span><strong>${money(c.avg_order_value)}</strong></article><article><span>Last Order</span><strong>${escH(rel(c.last_order_at))}</strong></article></div>
   <section class="crm-drawer-section"><h3>Contact</h3><p><b>${escH(c.customer_code || 'Customer ID pending')}</b><br>${escH(c.phone || '-')}<br>${escH(c.email || '-')}</p><div class="crm-drawer-actions"><button onclick="openCustomerChat(${Number(c.id)})">Open WhatsApp</button><button onclick="sendWa(${Number(c.id)}, 'reorder')">Reorder WhatsApp</button><button onclick="sendWa(${Number(c.id)}, 'upsell')">Upsell Message</button><a href="/admin/orders?search=${encodeURIComponent(c.phone || c.email || c.name || '')}">View Orders</a><button class="crm-danger" onclick="deleteCustomer(${Number(c.id)})">Delete Customer</button></div></section>
   <section class="crm-drawer-section"><h3>Sales Insight</h3><p><b>${escH(upsellText(c))}</b><br>Last product: ${escH(c.last_product || 'No product yet')}<br>Joined: ${escH(dt(c.created_at))}</p></section>
-  <section class="crm-drawer-section"><h3>Recent Orders</h3>${recent.length ? recent.map(o=>`<a class="crm-order-row" href="/admin/orders?search=${encodeURIComponent(o.order_id)}"><span>#${escH(o.order_id)}</span><b>${money(o.total_amount)}</b><em>${escH(o.status)}</em></a>`).join('') : '<p>No orders yet. Send a first-order offer.</p>'}</section>`;
+  <section class="crm-drawer-section"><h3>Recent Orders</h3>${recent.length ? recent.map(o=>`<a class="crm-order-row" href="/admin/orders?search=${encodeURIComponent(o.order_id)}"><span>${escH(o.order_id)}</span><b>${money(o.total_amount)}</b><em>${escH(o.status)}</em></a>`).join('') : '<p>No orders yet. Send a first-order offer.</p>'}</section>`;
   document.getElementById('crmDrawer').classList.add('open');
   document.getElementById('crmDrawer').setAttribute('aria-hidden','false');
 }

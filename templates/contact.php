@@ -131,13 +131,6 @@ include INCLUDE_PATH . '/partials/header.php';
           <?php endforeach; ?>
         </div>
       </div>
-      <aside class="contact-design-offer">
-        <div>
-          <h2>Get <span>FREE Design</span><br>on Your First Order!</h2>
-          <a href="https://wa.me/<?= $bizWa ?>?text=<?= $waText ?>" target="_blank" rel="noopener">Get Free Design</a>
-        </div>
-        <i class="fa-solid fa-gift" aria-hidden="true"></i>
-      </aside>
     </div>
   </section>
 </main>

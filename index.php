@@ -151,11 +151,15 @@ if ($uri === '/' && $method === 'GET') {
         $products    = \Catalog\ProductCatalog::all();
         $homeBanners = Database::rows("SELECT * FROM home_banners WHERE is_active=1 ORDER BY sort_order ASC, id DESC");
         $homeDeals   = [];
+        $homeSpecialOffers = [];
+        $comboOffers = [];
+        try { $comboOffers = \Combos\ComboOfferManager::home(); } catch (\Throwable $e) { error_log('Home combo offers unavailable: '.$e->getMessage()); }
         try {
-            $homeDeals = Database::rows("SELECT * FROM home_deals WHERE is_active=1 ORDER BY sort_order ASC, id DESC");
+            $homeDeals = Database::rows("SELECT * FROM home_deals WHERE is_active=1 AND deal_type='deal' ORDER BY CASE WHEN sort_order BETWEEN 1 AND 4 THEN sort_order ELSE 99 END ASC, id DESC LIMIT 4");
         } catch (\Throwable $e) {
             error_log('Home deals unavailable: ' . $e->getMessage());
         }
+        try{$offerRows=Database::rows("SELECT * FROM coupons WHERE is_active=1 AND popup_image IS NOT NULL AND popup_image<>'' AND (valid_from IS NULL OR valid_from<=CURDATE()) AND (valid_until IS NULL OR valid_until>=CURDATE()) ORDER BY id DESC");$offerByType=[];foreach($offerRows as $offerRow){$type=(string)($offerRow['offer_type']??'regular');if(in_array($type,['regular','order1','order2','order3'],true)&&!isset($offerByType[$type]))$offerByType[$type]=$offerRow;}foreach(['regular','order1','order2','order3'] as $type)if(isset($offerByType[$type]))$homeSpecialOffers[]=$offerByType[$type];}catch(\Throwable $e){error_log('Home special offers unavailable: '.$e->getMessage());}
         $homeBlogs = [];
         try {
             $homeBlogs = Database::rows("SELECT * FROM blogs WHERE is_active=1 AND is_featured=1 ORDER BY sort_order ASC, published_at DESC, id DESC");
@@ -170,19 +174,29 @@ if ($uri === '/' && $method === 'GET') {
         }
         $settings    = Database::rows("SELECT `key`, value FROM settings");
         $settingsMap = array_column($settings, 'value', 'key');
-        $homeReviews = \Reviews\ProductReview::featured(6);
+        $homeReviews = \Reviews\ProductReview::featured(12);
     } catch (\Throwable $e) {
         error_log('Home error: ' . $e->getMessage());
         $categories = $products = [];
         $homeBanners = [];
         $homeDeals = [];
+        $homeSpecialOffers = [];
+        $comboOffers = [];
         $homeBlogs = [];
         $businessNeeds = [];
         $settingsMap = [];
         $homeReviews = [];
     }
-    view('home', compact('categories', 'products', 'settingsMap', 'homeBanners', 'homeDeals', 'homeBlogs', 'homeReviews', 'businessNeeds'));
+    view('home', compact('categories', 'products', 'settingsMap', 'homeBanners', 'homeDeals', 'homeSpecialOffers', 'comboOffers', 'homeBlogs', 'homeReviews', 'businessNeeds'));
     exit;
+}
+
+if (preg_match('#^/combo/([a-z0-9-]+)$#', $uri, $m) && $method === 'GET') {
+    try { $combo = \Combos\ComboOfferManager::findBySlug($m[1]); } catch (\Throwable) { $combo = null; }
+    if (!$combo) { http_response_code(404); view('404'); exit; }
+    try { $relatedCombos = \Combos\ComboOfferManager::related((int)$combo['id'],3); } catch (\Throwable) { $relatedCombos=[]; }
+    try { $comboFaqs = \Faq\FaqManager::listByPage('product_detail'); } catch (\Throwable) { $comboFaqs=[]; }
+    view('combo-offer', compact('combo','relatedCombos','comboFaqs')); exit;
 }
 
 
@@ -362,6 +376,17 @@ if (preg_match('#^/product/([a-z0-9\-]+)$#', $uri, $m) && $method === 'GET') {
     exit;
 }
 
+// Coupon campaign landing page — only products explicitly assigned by Admin.
+if (preg_match('#^/offers/([A-Z0-9_-]+)$#i', $uri, $m) && $method === 'GET') {
+    $couponCode=strtoupper($m[1]);$coupon=$couponProducts=[];
+    try{
+        $coupon=Database::row("SELECT * FROM coupons WHERE code=? AND is_active=1 AND (valid_from IS NULL OR valid_from<=CURDATE()) AND (valid_until IS NULL OR valid_until>=CURDATE())",[$couponCode]);
+        if($coupon){$productSql="SELECT p.id,p.name,p.slug,p.original_price,COALESCE((SELECT COALESCE(pi.image_path,pi.url) FROM product_images pi WHERE pi.product_id=p.id ORDER BY pi.is_primary DESC,pi.sort_order,pi.id LIMIT 1),p.image_path) primary_image,(SELECT MIN(t.price) FROM product_quantity_tiers t WHERE t.product_id=p.id) min_price FROM products p";$params=[];if(($coupon['scope_type']??'all')==='category'){$productSql.=" JOIN coupon_products cp ON cp.product_id=p.id AND cp.coupon_id=?";$params[]=(int)$coupon['id'];}$productSql.=" WHERE p.is_active=1 ORDER BY p.name";$couponProducts=Database::rows($productSql,$params);}
+    }catch(\Throwable $e){error_log('Coupon landing unavailable: '.$e->getMessage());}
+    if(!$coupon){http_response_code(404);view('404');exit;}
+    view('coupon-products',compact('coupon','couponProducts'));exit;
+}
+
 // ── All Categories Page — /categories ─────────────────────────
 if ($uri === '/categories' && $method === 'GET') {
     try {
@@ -521,14 +546,24 @@ if ($uri === '/profile' && $method === 'GET') {
     \Auth\Auth::require();
     $user = \Auth\Auth::user();
     $profile = \Auth\Auth::getProfile((int)$user['id']);
-    try { $orders = \Orders\OrderManager::getUserOrders((int)$user['id']); }
-    catch (\Throwable) { $orders = []; }
-    try { $customOrders=Database::rows("SELECT * FROM custom_quote_requests WHERE user_id=? ORDER BY created_at DESC",[(int)$user['id']]); } catch (\Throwable) { $customOrders=[]; }
+    try { $allOrders = \Orders\OrderManager::getUserOrders((int)$user['id']); }
+    catch (\Throwable) { $allOrders = []; }
+    $orders = array_values(array_filter($allOrders, static fn(array $order): bool =>
+        (string)($order['order_type'] ?? 'normal') !== 'custom' && (int)($order['custom_quote_id'] ?? 0) === 0
+    ));
+    $customFulfillmentOrders = array_values(array_filter($allOrders, static fn(array $order): bool =>
+        ((string)($order['order_type'] ?? 'normal') === 'custom' || (int)($order['custom_quote_id'] ?? 0) > 0)
+        && (string)($order['payment_status'] ?? '') === 'paid'
+    ));
+    // A quote remains in the cart/quote workflow until payment is captured. Only
+    // confirmed paid custom orders belong in the customer's order history.
+    try { $customOrders=Database::rows("SELECT * FROM custom_quote_requests WHERE user_id=? AND payment_status='paid' AND status IN ('paid','converted_to_order') AND order_id IS NOT NULL ORDER BY created_at DESC",[(int)$user['id']]); } catch (\Throwable) { $customOrders=[]; }
     $reviewableItems = \Reviews\ProductReview::reviewableItemsForUser((int)$user['id']);
     $myReviews = \Reviews\ProductReview::userReviews((int)$user['id']);
     $wishlistItems = \Wishlist\Wishlist::itemsForUser((int)$user['id']);
     $myDesigns = \Designs\UserDesigns::forUser((int)$user['id']);
-    view('profile', compact('user', 'profile', 'orders', 'customOrders', 'reviewableItems', 'myReviews', 'wishlistItems', 'myDesigns'));
+    try { Database::query("CREATE TABLE IF NOT EXISTS user_addresses (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id INT UNSIGNED NOT NULL,label VARCHAR(80) NOT NULL DEFAULT 'Address',business_name VARCHAR(180) NULL,address_line1 VARCHAR(255) NOT NULL,address_line2 VARCHAR(255) NULL,city VARCHAR(120) NOT NULL,state VARCHAR(120) NOT NULL,pincode VARCHAR(20) NOT NULL,is_default TINYINT(1) NOT NULL DEFAULT 0,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,KEY idx_user_addresses_user (user_id,is_default,id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); try{Database::query("ALTER TABLE user_addresses ADD COLUMN address_type VARCHAR(20) NOT NULL DEFAULT 'home' AFTER label");}catch(\Throwable){} try{Database::query("ALTER TABLE user_addresses ADD COLUMN is_default_shipping TINYINT(1) NOT NULL DEFAULT 0 AFTER is_default");}catch(\Throwable){} try{Database::query("ALTER TABLE user_addresses ADD COLUMN is_default_billing TINYINT(1) NOT NULL DEFAULT 0 AFTER is_default_shipping");}catch(\Throwable){} try{Database::query("ALTER TABLE user_addresses ADD COLUMN legal_name VARCHAR(180) NULL AFTER business_name");}catch(\Throwable){} try{Database::query("ALTER TABLE user_addresses ADD COLUMN gst_no VARCHAR(30) NULL AFTER legal_name");}catch(\Throwable){} $savedAddresses=Database::rows("SELECT * FROM user_addresses WHERE user_id=? ORDER BY is_default_shipping DESC,is_default_billing DESC,id DESC",[(int)$user['id']]); } catch (\Throwable) { $savedAddresses=[]; }
+    view('profile', compact('user', 'profile', 'orders', 'customOrders', 'customFulfillmentOrders', 'savedAddresses', 'reviewableItems', 'myReviews', 'wishlistItems', 'myDesigns'));
     exit;
 }
 
@@ -580,12 +615,15 @@ if (isset($sitePageRoutes[$uri]) && $method === 'GET') {
     $sitePages = require APP_PATH . '/data/site_pages.php';
     $page = $sitePages[$sitePageRoutes[$uri]] ?? null;
     if (!$page) { http_response_code(404); view('404'); exit; }
+    if(in_array($sitePageRoutes[$uri],['shipping-policy','refund-return-policy','terms-and-conditions','privacy-policy'],true)){
+        try{$managedPage=\Content\ManagedPageManager::get($sitePageRoutes[$uri]);if($managedPage)$page['managed_html']=(string)$managedPage['content_html'];}catch(\Throwable $e){error_log('Managed page load failed: '.$e->getMessage());}
+    }
     $aboutReviews = [];
     try {
         $settings = Database::rows("SELECT `key`, value FROM settings");
         $settingsMap = array_column($settings, 'value', 'key');
         if ($sitePageRoutes[$uri] === 'about') {
-            $aboutReviews = \Reviews\ProductReview::featured(3);
+            $aboutReviews = \Reviews\ProductReview::featured(12);
         }
     } catch (\Throwable) {
         $settingsMap = [];
@@ -599,24 +637,13 @@ if (isset($sitePageRoutes[$uri]) && $method === 'GET') {
         $portfolioPerPage = 12;
         $portfolioTotalPages = 1;
         try {
-            $portfolioCategories = Database::rows("SELECT id, name, slug, icon, sort_order FROM portfolio_categories WHERE is_active=1 ORDER BY sort_order ASC, name ASC");
+            $portfolioCategories = [];
+            $portfolioStoredCategories = Database::rows("SELECT id, name, slug, sort_order FROM portfolio_categories WHERE is_active=1");
+            $portfolioStoredBySlug=[];foreach($portfolioStoredCategories as $row)$portfolioStoredBySlug[(string)$row['slug']]=$row;
+            foreach(\Catalog\ProductCatalog::categories() as $productCategory){$slug=(string)($productCategory['slug']??'');if($slug==='')continue;$stored=$portfolioStoredBySlug[$slug]??[];$portfolioCategories[]=['id'=>$stored['id']??null,'name'=>(string)($productCategory['name']??'Category'),'slug'=>$slug,'sort_order'=>(int)($productCategory['sort_order']??0)];}
             $portfolioCategorySlugs = [];
             foreach ($portfolioCategories as $portfolioCategoryRow) {
                 $portfolioCategorySlugs[(string)($portfolioCategoryRow['slug'] ?? '')] = true;
-            }
-            foreach (\Catalog\ProductCatalog::categories() as $productCategory) {
-                $productCategorySlug = trim((string)($productCategory['slug'] ?? ''));
-                if ($productCategorySlug === '' || isset($portfolioCategorySlugs[$productCategorySlug])) {
-                    continue;
-                }
-                $portfolioCategories[] = [
-                    'id' => null,
-                    'name' => (string)($productCategory['name'] ?? $productCategory['title'] ?? 'Category'),
-                    'slug' => $productCategorySlug,
-                    'icon' => (string)($productCategory['icon'] ?? 'fa-folder-open'),
-                    'sort_order' => (int)($productCategory['sort_order'] ?? 999),
-                ];
-                $portfolioCategorySlugs[$productCategorySlug] = true;
             }
             usort($portfolioCategories, static function (array $a, array $b): int {
                 return [(int)($a['sort_order'] ?? 999), (string)($a['name'] ?? '')] <=> [(int)($b['sort_order'] ?? 999), (string)($b['name'] ?? '')];
@@ -677,16 +704,33 @@ if ($uri === '/contact' && $method === 'GET') {
 }
 
 
-// Dedicated custom cart and checkout links. Custom quotes never mix with the normal cart checkout.
-if (preg_match('#^/(custom-cart|custom-checkout)/([A-Za-z0-9_-]{24,120})$#', $uri, $m) && $method === 'GET') {
-    $mode=$m[1]; $token=$m[2];
+// Legacy custom links add the approved quote to the persistent cart, then use the unified checkout.
+if (preg_match('#^/(custom-cart|custom-checkout)/([^/]+)/?$#', $uri, $m) && $method === 'GET') {
+    $mode=$m[1]; $token=trim(rawurldecode($m[2]));
+    if ($token === '' || strlen($token) > 160) {
+        http_response_code(410);
+        view('info-page',['page'=>['title'=>'Custom order link invalid','intro'=>'Please ask our team to resend your custom order payment link.'],'settingsMap'=>[]]);
+        exit;
+    }
     try { $quote=Database::row("SELECT * FROM custom_quote_requests WHERE quote_token=? LIMIT 1",[$token]);
-        if(!$quote || (float)($quote['quoted_amount']??0)<=0 || in_array((string)($quote['status']??''),['converted_to_order','closed','rejected'],true)){http_response_code(404);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>'This custom order link is no longer available.'],'settingsMap'=>[]]);exit;}
+        if(!$quote){http_response_code(410);view('info-page',['page'=>['title'=>'Custom order link expired','intro'=>'Please ask our team to resend your custom order payment link.'],'settingsMap'=>[]]);exit;}
+        $quoteStatus=(string)($quote['status']??''); $quotePaymentStatus=(string)($quote['payment_status']??'not_required');
+        if($quotePaymentStatus==='paid'){redirect('/profile#custom-orders');}
+        if((float)($quote['quoted_amount']??0)<=0 || in_array($quoteStatus,['closed','rejected'],true)){http_response_code(410);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>'This custom order is closed. Please contact our team for assistance.'],'settingsMap'=>[]]);exit;}
+        // Repair legacy records that were marked confirmed before payment was
+        // actually captured. They must remain payable and available in cart.
+        if(in_array($quoteStatus,['paid','converted_to_order'],true) && $quotePaymentStatus!=='paid'){
+            Database::query("UPDATE custom_quote_requests SET status='payment_pending',payment_status='payment_pending',updated_at=NOW() WHERE id=?",[(int)$quote['id']]);
+            $quote['status']='payment_pending'; $quote['payment_status']='payment_pending';
+        }
         if(!\Auth\Auth::check()) redirect('/login?next=/'.$mode.'/'.rawurlencode($token));
         $user=\Auth\Auth::user(); if((int)($quote['user_id']??0)!==(int)$user['id']){http_response_code(403);view('info-page',['page'=>['title'=>'Account required','intro'=>'Please login with the account linked to this custom order.'],'settingsMap'=>[]]);exit;}
         $added=\Cart\Cart::addCustomQuote($quote,(int)$user['id']); if(!($added['ok']??false)){http_response_code(422);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>$added['msg']??'Please contact us.'],'settingsMap'=>[]]);exit;}
         $cartItems=array_values(array_filter(\Cart\Cart::get(),static fn($item)=>(int)($item['custom_quote_id']??0)===(int)$quote['id']));$totals=\Cart\Cart::totals($cartItems);
-        if($mode==='custom-cart'){view('custom-cart',compact('quote','cartItems','totals','user','token'));exit;} $isCustomCheckout=true;view('checkout',compact('quote','cartItems','totals','user','token','isCustomCheckout'));exit;
+        // The WhatsApp link is intentionally a cart link: let the customer
+        // review the persistent quote before continuing to its checkout.
+        if($mode==='custom-cart') redirect('/cart');
+        redirect('/checkout');
     }catch(\Throwable $e){error_log($e->getMessage());http_response_code(500);view('info-page',['page'=>['title'=>'Custom order unavailable','intro'=>'Please try again later.'],'settingsMap'=>[]]);exit;}
 }
 
@@ -719,19 +763,19 @@ if ($uri === '/checkout' && $method === 'GET') {
 }
 
 // Order Confirmation
-if (preg_match('#^/order/confirm/([A-Z0-9]+)$#', $uri, $m) && $method === 'GET') {
+if (preg_match('#^/order/confirm/([A-Z0-9-]+)$#i', $uri, $m) && $method === 'GET') {
     \Auth\Auth::require();
     try { $order = \Orders\OrderManager::getOrderByOrderId($m[1]); }
     catch (\Throwable) { $order = null; }
     if (!$order || (int)$order['user_id'] !== (int)\Auth\Auth::user()['id']) {
         http_response_code(404); view('404'); exit;
     }
-    view(($order['order_type'] ?? 'normal') === 'custom' ? 'custom-confirm' : 'confirm', compact('order'));
+    view('confirm', compact('order'));
     exit;
 }
 
 // Invoice Download
-if (preg_match('#^/invoice/([A-Z0-9]+)$#', $uri, $m) && $method === 'GET') {
+if (preg_match('#^/invoice/([A-Z0-9-]+)$#i', $uri, $m) && $method === 'GET') {
     \Auth\Auth::require();
     \Orders\OrderManager::ensureInvoiceSchema();
     try { $order = \Orders\OrderManager::getOrderByOrderId($m[1]); }
