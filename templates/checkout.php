@@ -1,5 +1,6 @@
 <?php
 $isCustomCheckout=!empty($isCustomCheckout); $customQuoteId=(int)($quote['id']??0);
+$hasCustomQuoteInCart = (bool)array_filter($cartItems ?? [], static fn($item) => (int)($item['custom_quote_id'] ?? 0) > 0);
 $pageTitle = $isCustomCheckout ? 'Custom Order Checkout — RCS Graphic' : 'Checkout — RCS Graphic';
 $loadRazorpay = true;
 include INCLUDE_PATH . '/partials/head.php';
@@ -10,6 +11,7 @@ $bizWa = Database::setting('biz_whatsapp', env('BIZ_WHATSAPP', ''));
 $itemCount = count($cartItems ?? []);
 $checkoutSubtotal = (float)($totals['subtotal'] ?? 0);
 $checkoutDiscount = (float)($totals['discount'] ?? 0);
+$checkoutDesignFeeWaiver = (float)($totals['design_fee_waiver'] ?? 0);
 $checkoutGstPct = (float)($totals['gst_pct'] ?? 18);
 $checkoutGstAmt = (float)($totals['gst_amt'] ?? 0);
 $checkoutShipping = (float)($totals['shipping'] ?? 0);
@@ -25,10 +27,9 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
     </header>
 
     <ol class="checkout-steps" aria-label="Checkout progress">
-      <li class="is-active"><span>1</span><strong>Shipping Details</strong></li>
-      <li><span>2</span><strong>Review Order</strong></li>
-      <li><span>3</span><strong>Payment</strong></li>
-      <li><span>4</span><strong>Order Complete</strong></li>
+      <li class="is-active"><span>1</span><strong>Customer Details</strong></li>
+      <li><span>2</span><strong>Payment</strong></li>
+      <li><span>3</span><strong>Order Complete</strong></li>
     </ol>
 
     <div class="checkout-layout-grid">
@@ -44,12 +45,24 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
           <label class="checkout-checkline"><input type="checkbox" checked> <span>Keep me updated on offers and order status</span></label>
           <p class="checkout-login-note">Already have an account? <a href="/login?next=/checkout">Login here</a></p>
           <div id="guestErr" class="checkout-error" style="display:none"></div>
+          <div class="checkout-detail-next"><button type="button" class="btn btn-blue" onclick="continueCheckoutDetails()">Next: Shipping Address</button></div>
+        </section>
+        <?php else: ?>
+        <section class="checkout-card checkout-contact-card">
+          <div class="checkout-card-title"><i class="fa-regular fa-user" aria-hidden="true"></i><h2>Customer Information</h2></div>
+          <div class="checkout-form-grid checkout-form-grid-3">
+            <label>Full Name<input id="g-name" class="checkout-input" value="<?= htmlspecialchars((string)($user['name']??''),ENT_QUOTES) ?>" readonly></label>
+            <label>Email Address<input id="g-email" class="checkout-input" value="<?= htmlspecialchars((string)($user['email']??''),ENT_QUOTES) ?>" readonly></label>
+            <label>Phone Number<input id="g-phone" class="checkout-input" value="<?= htmlspecialchars((string)($user['phone']??''),ENT_QUOTES) ?>" readonly></label>
+          </div>
+          <div class="checkout-detail-next"><button type="button" class="btn btn-blue" onclick="continueCheckoutDetails()">Next: Shipping Address</button></div>
         </section>
         <?php endif; ?>
 
-        <section class="checkout-card checkout-shipping-card">
+        <div id="checkoutAddressStage"<?= isset($_GET['details']) ? '' : ' hidden' ?>><section class="checkout-card checkout-shipping-card">
           <div class="checkout-card-title"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i><h2>Shipping Address</h2></div>
-          <div class="checkout-form-grid">
+          <?php if (!empty($user['id'])): ?><label class="checkout-saved-address-select" id="saved-address-wrap" hidden>Choose Shipping Address<select id="saved-address-select" class="checkout-input" onchange="selectCheckoutAddress(this.value)"><option value="">Select Shipping Address</option><option value="new">Add New Address</option></select></label><div id="selectedAddressText" class="checkout-selected-address" hidden></div><?php endif; ?>
+          <div class="checkout-form-grid" id="shippingAddressFields"<?= !empty($user['id']) ? ' hidden' : '' ?>>
             <label class="checkout-full-field">Business / Full Name <b>*</b><input id="s-business" class="checkout-input" placeholder="Enter business or full name" autocomplete="organization"></label>
             <label>Address Line 1 <b>*</b><input id="s-add1" class="checkout-input" placeholder="House / Flat / Building / Street" autocomplete="address-line1"></label>
             <label>Address Line 2 <span>(Optional)</span><input id="s-add2" class="checkout-input" placeholder="Landmark / Area / Apartment" autocomplete="address-line2"></label>
@@ -57,16 +70,15 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
             <label>State <b>*</b><input id="s-state" class="checkout-input" placeholder="Select State" autocomplete="address-level1"></label>
             <label>PIN Code <b>*</b><input id="s-pin" class="checkout-input" placeholder="Enter PIN code" autocomplete="postal-code"></label>
           </div>
-          <?php if (!empty($user['id'])): ?>
-          <label id="ship-save-wrap" class="checkout-checkline" style="display:none"><input type="checkbox" id="ship-save-default"> <span>Save this address for future use</span></label>
-          <?php endif; ?>
+          <?php if (!empty($user['id'])): ?><label id="ship-save-wrap" class="checkout-checkline" hidden><input type="checkbox" id="ship-save-default" checked> <span>Save this address in My Account for future use</span></label><?php endif; ?>
           <div id="shipErr" class="checkout-error" style="display:none"></div>
         </section>
 
         <section class="checkout-card checkout-billing-card">
           <div class="checkout-card-title"><i class="fa-regular fa-file-lines" aria-hidden="true"></i><h2>Billing Details <small>Tax Invoice</small></h2></div>
+          <?php if (!empty($user['id'])): ?><label class="checkout-saved-address-select" id="saved-billing-address-wrap" hidden>Choose Billing Address<select id="saved-billing-address-select" class="checkout-input" onchange="selectCheckoutBillingAddress(this.value)"><option value="">Select Billing Address</option><option value="new">Add New Billing Address</option></select></label><div id="selectedBillingAddressText" class="checkout-selected-address" hidden></div><?php endif; ?>
           <label class="checkout-checkline"><input type="checkbox" id="bill-same-ship" onchange="syncBillingFromShipping()"> <span>Same as shipping address</span></label>
-          <div id="billingFields" class="checkout-form-grid checkout-billing-grid">
+          <div id="billingFields" class="checkout-form-grid checkout-billing-grid"<?= !empty($user['id']) ? ' hidden' : '' ?>>
             <label>Legal Business Name <b>*</b><input id="b-legal" class="checkout-input" placeholder="ABC Pvt Ltd"></label>
             <label>GSTIN <span>(Optional)</span><input id="b-gst" class="checkout-input" placeholder="24ABCDE1234F1Z5" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></label>
             <label>Billing Address Line 1 <b>*</b><input id="b-add1" class="checkout-input" placeholder="Street / Building"></label>
@@ -75,18 +87,8 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
             <label>State <b>*</b><input id="b-state" class="checkout-input" placeholder="Gujarat"></label>
             <label>PIN Code <b>*</b><input id="b-pin" class="checkout-input" placeholder="360001"></label>
           </div>
+          <?php if (!empty($user['id'])): ?><label id="bill-save-wrap" class="checkout-checkline" hidden><input type="checkbox" id="bill-save-default" checked> <span>Save this billing address in My Account</span></label><?php endif; ?>
           <div id="billErr" class="checkout-error" style="display:none"></div>
-        </section>
-
-        <section class="checkout-card checkout-payment-card">
-          <div class="checkout-card-title"><i class="fa-regular fa-credit-card" aria-hidden="true"></i><h2>Payment Method <small>100% Secure Payments</small></h2></div>
-          <div class="checkout-payment-options" aria-label="Supported Razorpay payment options">
-            <label class="is-selected"><input type="radio" name="payVisual" checked><span><strong>UPI / QR Code</strong><small>Pay using any UPI app</small></span><em>UPI</em></label>
-            <label><input type="radio" name="payVisual"><span><strong>Credit / Debit Card</strong><small>Visa, Mastercard, RuPay</small></span><em>VISA • MC</em></label>
-            <label><input type="radio" name="payVisual"><span><strong>Net Banking</strong><small>All major banks supported</small></span><em><i class="fa-solid fa-building-columns" aria-hidden="true"></i></em></label>
-            <label><input type="radio" name="payVisual"><span><strong>Wallets</strong><small>PhonePe, Paytm, Amazon Pay &amp; more</small></span><em>Wallet</em></label>
-          </div>
-          <div class="checkout-secure-note"><i class="fa-solid fa-lock" aria-hidden="true"></i> Your payment information is secure with 256-bit SSL encryption.</div>
         </section>
 
         <section class="checkout-consent-actions">
@@ -102,6 +104,7 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
             <?php endif; ?>
           </div>
         </section>
+        </div>
       </div>
 
       <aside class="checkout-side-col">
@@ -118,23 +121,27 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
                 <?php else: ?>
                   <p><?= number_format((int)($item['quantity'] ?? 0)) ?> pcs<?= !empty($item['quality_name']) ? ' | ' . htmlspecialchars((string)$item['quality_name']) : '' ?></p>
                 <?php endif; ?>
-                <strong>₹<?= number_format((float)($item['total_price'] ?? 0)) ?></strong>
+                <?php $itemBreakdown = is_array($item['price_breakdown'] ?? null) ? $item['price_breakdown'] : (json_decode((string)($item['price_breakdown'] ?? '{}'), true) ?: []); $itemDesignFee = (float)($itemBreakdown['design_fee'] ?? 0); ?>
+                <?php if ($itemDesignFee > 0): ?><small>Includes ₹<?= number_format($itemDesignFee) ?> design fee</small><?php endif; ?>
               </div>
               <div class="checkout-item-side">
-                <span><?= number_format((int)($item['quantity'] ?? 0)) ?></span>
-                <?php if (!empty($item['id'])): ?><button type="button" onclick="removeCheckoutItem('<?= htmlspecialchars((string)$item['id'], ENT_QUOTES) ?>')" aria-label="Remove <?= htmlspecialchars($item['product_name'] ?? 'item', ENT_QUOTES) ?>">×</button><?php endif; ?>
+                <strong>₹<?= number_format((float)($item['total_price'] ?? 0)) ?></strong>
+                <?php if (($item['item_type'] ?? 'product') !== 'custom_quote' && !empty($item['id'])): ?><button type="button" onclick="removeCheckoutItem('<?= htmlspecialchars((string)$item['id'], ENT_QUOTES) ?>')" aria-label="Remove <?= htmlspecialchars($item['product_name'] ?? 'item', ENT_QUOTES) ?>">×</button><?php endif; ?>
               </div>
             </article>
             <?php endforeach; ?>
           </div>
+          <?php if (!$hasCustomQuoteInCart): ?>
           <div class="checkout-coupon-mini">
             <div><i class="fa-solid fa-tag" aria-hidden="true"></i> Have a coupon?</div>
             <div class="coupon-row"><input id="couponInp" placeholder="Enter coupon code" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"><button class="btn btn-outline btn-sm" onclick="applyCouponCheckout()">Apply</button></div>
             <div id="couponMsg"></div>
           </div>
+          <?php endif; ?>
           <div class="checkout-totals" id="totalsBox">
             <div><span>Subtotal</span><strong>₹<?= number_format($checkoutSubtotal) ?></strong></div>
             <?php if ($checkoutDiscount > 0): ?><div class="is-discount"><span>Discount</span><strong>-₹<?= number_format($checkoutDiscount) ?></strong></div><?php endif; ?>
+            <?php if ($checkoutDesignFeeWaiver > 0): ?><div class="is-discount"><span>Design Fee (Free Design Offer)</span><strong><s>₹<?= number_format($checkoutDesignFeeWaiver) ?></s> ₹0</strong></div><?php endif; ?>
             <div><span>Shipping / Delivery</span><strong class="<?= $checkoutShipping > 0 ? '' : ($checkoutShippingMode === 'manual' ? 'is-manual' : 'is-free') ?>"><?= $checkoutShippingLabel ?></strong></div>
             <div><span>Tax (<?= htmlspecialchars((string)$checkoutGstPct, ENT_QUOTES, 'UTF-8') ?>% GST)</span><strong>₹<?= number_format($checkoutGstAmt) ?></strong></div>
             <div class="checkout-total-row"><span>Total Amount</span><strong>₹<?= number_format($checkoutTotal) ?></strong></div>
@@ -156,9 +163,24 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
 </main>
 <script>
 const CSRF = '<?= $csrf ?>';
-const BIZ_WA = '<?= htmlspecialchars($bizWa) ?>'; const CUSTOM_QUOTE_ID=<?= $isCustomCheckout?$customQuoteId:0 ?>;
+const BIZ_WA = '<?= htmlspecialchars($bizWa) ?>'; const CUSTOM_QUOTE_ID=0;
 let checkoutCoupon = null;
-let checkoutProfile = { shipping: null, billing: null };
+let checkoutProfile = { profile: null, shipping: null, billing: null };
+let checkoutAddresses = [];
+document.addEventListener('DOMContentLoaded',()=>{const code=localStorage.getItem('rcsCampaignCoupon');const input=document.getElementById('couponInp');if(code&&input){input.value=code;applyCouponCheckout();}});
+
+async function continueCheckoutDetails(){
+  const name=document.getElementById('g-name')?.value.trim(),email=document.getElementById('g-email')?.value.trim(),phone=document.getElementById('g-phone')?.value.replace(/\D/g,'');
+  const err=document.getElementById('guestErr');
+  if(!name||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email||'')||phone.length<10){if(err){err.textContent='Please enter a valid full name, email and mobile number.';err.style.display='block';}return;}
+  <?php if(empty($user['id'])): ?>
+  const result=await fetch('/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-TOKEN':CSRF},credentials:'same-origin',body:JSON.stringify({name,email,phone,password:phone,company:'',marketing_consent:1})}).then(r=>r.json());
+  if(!result.ok){if(err){err.innerHTML=(result.msg||'Could not create your account.')+' <a href="/login?next=/checkout">Login if you already have an account</a>';err.style.display='block';}return;}
+  location.href='/checkout?details=1';return;
+  <?php else: ?>
+  document.getElementById('checkoutAddressStage').hidden=false;document.getElementById('checkoutAddressStage').scrollIntoView({behavior:'smooth',block:'start'});
+  <?php endif; ?>
+}
 
 async function applyCouponCheckout() {
   const code = document.getElementById('couponInp').value.trim().toUpperCase();
@@ -183,6 +205,7 @@ async function applyCouponCheckout() {
       document.getElementById('totalsBox').innerHTML = `
         <div><span>Subtotal</span><strong>${fmt(tot.subtotal)}</strong></div>
         ${Number(tot.discount || 0) > 0 ? `<div class="is-discount"><span>Discount</span><strong>-${fmt(tot.discount)}</strong></div>` : ''}
+        ${Number(tot.design_fee_waiver || 0) > 0 ? `<div class="is-discount"><span>Design Fee (Free Design Offer)</span><strong><s>${fmt(tot.design_fee_waiver)}</s> ₹0</strong></div>` : ''}
         <div><span>Shipping / Delivery</span><strong class="${shipping > 0 ? '' : (shippingMode === 'manual' ? 'is-manual' : 'is-free')}">${shippingText}</strong></div>
         <div><span>Tax (${tot.gst_pct}% GST)</span><strong>${fmt(tot.gst_amt)}</strong></div>
         <div class="checkout-total-row"><span>Total Amount</span><strong>${fmt(tot.total)}</strong></div>`;
@@ -284,7 +307,8 @@ function toggleShippingFields() {
 
 function syncBillingFromShipping() {
   const same = !!document.getElementById('bill-same-ship')?.checked;
-  if (!same) return;
+  if (!same) {const select=document.getElementById('saved-billing-address-select'),preview=document.getElementById('selectedBillingAddressText'),fields=document.getElementById('billingFields');if(select?.value)selectCheckoutBillingAddress(select.value);else{if(preview)preview.hidden=true;if(fields)fields.hidden=!!select;}return;}
+  const fields=document.getElementById('billingFields'),preview=document.getElementById('selectedBillingAddressText'),select=document.getElementById('saved-billing-address-select');if(fields)fields.hidden=true;if(preview){preview.hidden=false;preview.innerHTML=`<strong>Same as Shipping Address</strong><p>${[document.getElementById('s-business')?.value,document.getElementById('s-add1')?.value,document.getElementById('s-city')?.value,document.getElementById('s-state')?.value,document.getElementById('s-pin')?.value].filter(Boolean).join(', ')}</p>`;}if(select)select.value='';
   setField('b-add1', document.getElementById('s-add1')?.value || '');
   setField('b-add2', document.getElementById('s-add2')?.value || '');
   setField('b-city', document.getElementById('s-city')?.value || '');
@@ -391,6 +415,7 @@ function getCheckoutBilling() {
     city,
     state,
     pincode: pin,
+    save_as_default: !!document.getElementById('bill-save-default')?.checked,
   };
 }
 
@@ -429,6 +454,8 @@ function setField(id, val = '') {
   const el = document.getElementById(id);
   if (el) el.value = val || '';
 }
+function selectCheckoutAddress(value){const address=checkoutAddresses.find(item=>String(item.id)===String(value)),fields=document.getElementById('shippingAddressFields'),preview=document.getElementById('selectedAddressText'),saveWrap=document.getElementById('ship-save-wrap');if(!address){if(fields)fields.hidden=value!=='new';if(preview)preview.hidden=true;if(saveWrap)saveWrap.hidden=value!=='new';if(value==='new'){['s-business','s-add1','s-add2','s-city','s-state','s-pin'].forEach(id=>setField(id,''));}return;}const profile=checkoutProfile.profile||{};setField('s-business',address.business_name||profile.name);setField('s-add1',address.address_line1);setField('s-add2',address.address_line2);setField('s-city',address.city);setField('s-state',address.state);setField('s-pin',address.pincode);if(fields)fields.hidden=true;if(saveWrap)saveWrap.hidden=true;if(preview){preview.hidden=false;preview.innerHTML=`<strong>${String(address.address_type||'Home').replace(/^./,c=>c.toUpperCase())}</strong><p>${[address.business_name,address.address_line1,address.city,address.state,address.pincode].filter(Boolean).join(', ')}</p><button type="button" onclick="document.getElementById('saved-address-select').value='new';selectCheckoutAddress('new')">Add New Address</button>`;}syncBillingFromShipping();}
+function selectCheckoutBillingAddress(value){const address=checkoutAddresses.find(item=>String(item.id)===String(value)),fields=document.getElementById('billingFields'),preview=document.getElementById('selectedBillingAddressText'),saveWrap=document.getElementById('bill-save-wrap'),same=document.getElementById('bill-same-ship');if(same)same.checked=false;if(!address){if(fields)fields.hidden=value!=='new';if(preview)preview.hidden=true;if(saveWrap)saveWrap.hidden=value!=='new';if(value==='new'){['b-legal','b-gst','b-add1','b-add2','b-city','b-state','b-pin'].forEach(id=>setField(id,''));}return;}const profile=checkoutProfile.profile||{};setField('b-legal',address.legal_name||address.business_name||profile.company||profile.name);setField('b-gst',address.gst_no);setField('b-add1',address.address_line1);setField('b-add2',address.address_line2);setField('b-city',address.city);setField('b-state',address.state);setField('b-pin',address.pincode);if(fields)fields.hidden=true;if(saveWrap)saveWrap.hidden=true;if(preview){preview.hidden=false;preview.innerHTML=`<strong>${String(address.address_type||'Home').replace(/^./,c=>c.toUpperCase())}</strong><p>${[address.legal_name||address.business_name,address.address_line1,address.city,address.state,address.pincode].filter(Boolean).join(', ')}</p><button type="button" onclick="document.getElementById('saved-billing-address-select').value='new';selectCheckoutBillingAddress('new')">Add New Billing Address</button>`;}}
 
 async function prefillCheckoutFromProfile() {
   <?php if (empty($user['id'])): ?>
@@ -439,16 +466,27 @@ async function prefillCheckoutFromProfile() {
     const data = await resp.json();
     if (!data.ok || !data.profile) return;
 
+    checkoutProfile.profile = data.profile;
     checkoutProfile.shipping = data.profile.shipping || null;
     checkoutProfile.billing = data.profile.billing || null;
+    checkoutAddresses = Array.isArray(data.profile.addresses) ? data.profile.addresses : [];
+    const addressWrap=document.getElementById('saved-address-wrap'),addressSelect=document.getElementById('saved-address-select'),billingWrap=document.getElementById('saved-billing-address-wrap'),billingSelect=document.getElementById('saved-billing-address-select');
+    const preferredAddress=checkoutAddresses.find(a=>Number(a.is_default_shipping)===1||Number(a.is_default)===1)||null;
+    const preferredBillingAddress=checkoutAddresses.find(a=>Number(a.is_default_billing)===1)||null;
+    if(addressWrap&&addressSelect){addressWrap.hidden=false;addressSelect.innerHTML='<option value="">Select Shipping Address</option>'+checkoutAddresses.map(a=>`<option value="${a.id}">${String(a.address_type||'home').replace(/^./,c=>c.toUpperCase())} - ${String(a.address_line1||'')}</option>`).join('')+'<option value="new">Add New Address</option>';if(preferredAddress)addressSelect.value=String(preferredAddress.id);}
+    if(billingWrap&&billingSelect){billingWrap.hidden=false;billingSelect.innerHTML='<option value="">Select Billing Address</option>'+checkoutAddresses.map(a=>`<option value="${a.id}">${String(a.address_type||'home').replace(/^./,c=>c.toUpperCase())} - ${String(a.address_line1||'')}</option>`).join('')+'<option value="new">Add New Billing Address</option>';if(preferredBillingAddress)billingSelect.value=String(preferredBillingAddress.id);}
     const profileName = data.profile.name || '';
     const profileCompany = data.profile.company || '';
 
     setField('g-name', profileName);
     setField('g-email', data.profile.email || '');
     setField('g-phone', data.profile.phone || '');
+    setField('g-company', profileCompany);
 
-    if (checkoutProfile.shipping) {
+    if (preferredAddress) {
+      selectCheckoutAddress(preferredAddress.id);
+    } else if (checkoutProfile.shipping) {
+      if(addressSelect){addressSelect.value='new';selectCheckoutAddress('new');}
       setField('s-business', checkoutProfile.shipping.business_name || profileCompany || profileName);
       setField('s-add1', checkoutProfile.shipping.address_line1);
       setField('s-add2', checkoutProfile.shipping.address_line2);
@@ -457,10 +495,14 @@ async function prefillCheckoutFromProfile() {
       setField('s-pin', checkoutProfile.shipping.pincode);
     } else {
       setField('s-business', profileCompany || profileName);
+      if(addressSelect){addressSelect.value=checkoutAddresses.length?'':'new';selectCheckoutAddress(addressSelect.value);}
     }
 
-    if (checkoutProfile.billing) {
-      setField('b-legal', checkoutProfile.billing.legal_name);
+    if (preferredBillingAddress) {
+      selectCheckoutBillingAddress(preferredBillingAddress.id);toggleBillingFields();
+    } else if (checkoutProfile.billing) {
+      if(billingSelect){billingSelect.value='new';selectCheckoutBillingAddress('new');}
+      setField('b-legal', checkoutProfile.billing.legal_name || profileCompany || profileName);
       setField('b-gst', checkoutProfile.billing.gst_no);
       setField('b-add1', checkoutProfile.billing.address_line1);
       setField('b-add2', checkoutProfile.billing.address_line2);
@@ -468,7 +510,7 @@ async function prefillCheckoutFromProfile() {
       setField('b-state', checkoutProfile.billing.state);
       setField('b-pin', checkoutProfile.billing.pincode);
       toggleBillingFields();
-    }
+    } else {setField('b-legal', profileCompany || profileName);if(billingSelect){billingSelect.value=checkoutAddresses.length?'':'new';selectCheckoutBillingAddress(billingSelect.value);}}
 
     toggleShippingFields();
   } catch (e) { /* ignore prefill failures */ }
@@ -479,12 +521,6 @@ document.addEventListener('DOMContentLoaded', () => {
   ['s-business','s-add1','s-add2','s-city','s-state','s-pin'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', syncBillingFromShipping);
-  });
-  document.querySelectorAll('.checkout-payment-options label').forEach(label => {
-    label.addEventListener('click', () => {
-      document.querySelectorAll('.checkout-payment-options label').forEach(item => item.classList.remove('is-selected'));
-      label.classList.add('is-selected');
-    });
   });
   prefillCheckoutFromProfile();
 });

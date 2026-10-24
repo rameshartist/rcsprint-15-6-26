@@ -110,7 +110,6 @@ include INCLUDE_PATH . '/partials/header.php';
               $name = (string)($cat['name'] ?? 'Category');
               $slug = (string)($cat['slug'] ?? '');
               $image = trim((string)($cat['image_path'] ?? ''));
-              $icon = trim((string)($cat['icon'] ?? '🖨️'));
               $productCount = (int)($cat['product_count'] ?? 0);
               $theme = $categoryThemeClasses[$idx % count($categoryThemeClasses)];
             ?>
@@ -119,11 +118,10 @@ include INCLUDE_PATH . '/partials/header.php';
                   <?php if ($image !== ''): ?>
                     <img src="<?= htmlspecialchars($image) ?>" alt="<?= htmlspecialchars($name) ?>" loading="lazy" onerror="this.src='https://placehold.co/600x600/EEF3FD/1A56E8?text=<?= urlencode($name) ?>'">
                   <?php else: ?>
-                    <div class="shop-cat-fallback" aria-hidden="true"><?= htmlspecialchars($icon) ?></div>
+                    <div class="shop-cat-fallback" aria-hidden="true"></div>
                   <?php endif; ?>
                 </div>
                 <div class="all-cat-body">
-                  <span class="all-cat-icon" aria-hidden="true"><i class="fa-solid fa-print"></i></span>
                   <h2><?= htmlspecialchars($name) ?></h2>
                   <p><?= $productCount ?> product<?= $productCount === 1 ? '' : 's' ?></p>
                   <span class="all-cat-cta">View Products <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></span>
@@ -148,35 +146,7 @@ include INCLUDE_PATH . '/partials/header.php';
 </main>
 
 <!-- QUICK HELP STRIP -->
-<section class="quick-help-section" id="quick-help-sec" aria-label="Quick help and bulk order actions" data-reveal>
-  <div class="quick-help-container">
-    <div class="quick-help-bar">
-      <a class="quick-help-item quick-help-call" href="tel:<?= preg_replace('/\D+/', '', $bizPhone) ?>">
-        <span class="quick-help-icon"><i class="fa-solid fa-phone-volume" aria-hidden="true"></i></span>
-        <span class="quick-help-copy">
-          <span>Need Help? Call Us</span>
-          <strong><?= $bizPhone ?></strong>
-        </span>
-      </a>
-
-      <button class="quick-help-item quick-help-whatsapp" type="button" onclick="window.open('https://wa.me/<?= $bizWa ?>','_blank')">
-        <span class="quick-help-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></span>
-        <span class="quick-help-copy">
-          <strong>Chat with us on WhatsApp</strong>
-          <span>We are here to help!</span>
-        </span>
-      </button>
-
-      <a class="quick-help-item quick-help-download" href="/categories" aria-label="Download our brochure for all products">
-        <span class="quick-help-icon"><i class="fa-solid fa-download" aria-hidden="true"></i></span>
-        <span class="quick-help-copy">
-          <strong>Download Our Brochure</strong>
-          <span>For All Products</span>
-        </span>
-      </a>
-    </div>
-  </div>
-</section>
+<?php include INCLUDE_PATH . '/partials/quick-help.php'; ?>
 
 <!-- FOOTER -->
 <?php include INCLUDE_PATH . '/partials/site-footer.php'; ?>
