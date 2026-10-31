@@ -36,6 +36,12 @@ include __DIR__ . '/layout.php';
         <option value="product_detail">FAQs for All Product Detail Pages</option>
       </select>
     </label>
+    <label>FAQ Category / Topic
+      <input id="faq-topic" class="fi" maxlength="160" placeholder="Example: Artwork & Design">
+    </label>
+    <label id="faq-category-wrap" hidden>Product Category
+      <select id="faq-category" class="fi fi-sel"><option value="">All Product Detail Pages</option></select>
+    </label>
     <label>Question
       <input id="faq-question" class="fi" maxlength="255" required placeholder="Example: Do you offer design support?">
     </label>
@@ -62,6 +68,7 @@ include __DIR__ . '/layout.php';
 const CSRF = '<?= htmlspecialchars($csrf ?? '') ?>';
 let FAQS = [];
 let FAQ_LABELS = {};
+let FAQ_CATEGORIES = [];
 let faqFilter = 'all';
 
 const escFaq = (s) => String(s || '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -69,7 +76,7 @@ const escFaq = (s) => String(s || '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','
 async function loadFaqs() {
   const res = await fetch('/admin/api/faqs', {credentials:'same-origin'}).then(r => r.json());
   FAQS = res.faqs || [];
-  FAQ_LABELS = res.page_labels || {};
+  FAQ_LABELS = res.page_labels || {}; FAQ_CATEGORIES=res.categories||[];document.getElementById('faq-category').innerHTML='<option value="">All Product Detail Pages</option>'+FAQ_CATEGORIES.map(c=>`<option value="${Number(c.id)}">${escFaq(c.name)}</option>`).join('');
   renderFaqs();
 }
 
@@ -89,7 +96,7 @@ function renderFaqs() {
   list.innerHTML = rows.map(f => `
     <article class="adm-faq-card">
       <div>
-        <span>${escFaq(FAQ_LABELS[f.page_key] || f.page_key)}</span>
+        <span>${escFaq(FAQ_LABELS[f.page_key] || f.page_key)}${f.topic?' · '+escFaq(f.topic):''}</span>
         <strong>${escFaq(f.question)}</strong>
         <p>${escFaq(f.answer)}</p>
         <small>Sort: ${Number(f.sort_order || 0)} · ${Number(f.is_active) ? 'Active' : 'Inactive'}</small>
@@ -108,6 +115,9 @@ function openFaqForm(id = 0) {
   document.getElementById('faqModalTitle').textContent = faq ? 'Edit FAQ' : 'Add FAQ';
   document.getElementById('faq-id').value = faq ? Number(faq.id) : 0;
   document.getElementById('faq-page').value = faq?.page_key || (faqFilter !== 'all' ? faqFilter : 'contact');
+  document.getElementById('faq-topic').value = faq?.topic || '';
+  document.getElementById('faq-category').value = faq?.category_id || '';
+  toggleFaqCategory();
   document.getElementById('faq-question').value = faq?.question || '';
   document.getElementById('faq-answer').value = faq?.answer || '';
   document.getElementById('faq-sort').value = Number(faq?.sort_order || 0);
@@ -127,6 +137,8 @@ async function saveFaq(event) {
   const err = document.getElementById('faqErr');
   const payload = {
     page_key: document.getElementById('faq-page').value,
+    topic: document.getElementById('faq-topic').value.trim(),
+    category_id: document.getElementById('faq-page').value==='product_detail'?(Number(document.getElementById('faq-category').value)||null):null,
     question: document.getElementById('faq-question').value.trim(),
     answer: document.getElementById('faq-answer').value.trim(),
     sort_order: Number(document.getElementById('faq-sort').value || 0),
@@ -154,6 +166,10 @@ async function saveFaq(event) {
   }
 }
 
+function toggleFaqCategory() {
+  document.getElementById('faq-category-wrap').hidden = document.getElementById('faq-page').value !== 'product_detail';
+}
+
 async function toggleFaq(id) {
   await fetch(`/admin/api/faqs/${id}/toggle`, {method:'POST', headers:{'X-CSRF-TOKEN':CSRF}, credentials:'same-origin'});
   loadFaqs();
@@ -165,6 +181,7 @@ async function deleteFaq(id) {
   loadFaqs();
 }
 
+document.getElementById('faq-page').addEventListener('change', toggleFaqCategory);
 loadFaqs();
 </script>
     </div></div></div>
