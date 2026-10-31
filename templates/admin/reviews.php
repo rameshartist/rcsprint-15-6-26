@@ -5,20 +5,10 @@ include __DIR__ . '/layout.php';
 ?>
 <div class="adm-pt">Customer Reviews</div>
 
-<div class="admin-review-toolbar">
-  <div>
-    <strong id="reviewCount">Loading reviews…</strong>
-    <p>Approve verified customer feedback and mark the best reviews as featured for product/home pages.</p>
-  </div>
-  <div class="admin-review-filters">
-    <select id="reviewStatus" class="fi" onchange="loadReviews()">
-      <option value="all">All Status</option>
-      <option value="pending">Pending</option>
-      <option value="approved">Approved</option>
-      <option value="rejected">Rejected</option>
-    </select>
-    <input id="reviewSearch" class="fi" placeholder="Search product, customer or comment" oninput="scheduleReviewLoad()">
-  </div>
+<div class="admin-review-status-cards" aria-label="Review status filters">
+  <button type="button" class="admin-review-status-card is-active" data-review-status="pending" onclick="selectReviewStatus('pending',this)"><span>Pending Reviews</span><strong id="reviewPendingCount">0</strong></button>
+  <button type="button" class="admin-review-status-card" data-review-status="approved" onclick="selectReviewStatus('approved',this)"><span>Approved Reviews</span><strong id="reviewApprovedCount">0</strong></button>
+  <button type="button" class="admin-review-status-card" data-review-status="rejected" onclick="selectReviewStatus('rejected',this)"><span>Rejected Reviews</span><strong id="reviewRejectedCount">0</strong></button>
 </div>
 
 <div id="reviewList" class="admin-review-list">
@@ -26,24 +16,19 @@ include __DIR__ . '/layout.php';
 </div>
 
 <script>
-let reviewTimer = null;
+let activeReviewStatus = 'pending';
 function escH(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
 function statusLabel(status) {
   return {pending:'Pending', approved:'Approved', rejected:'Rejected'}[status] || status || 'Pending';
 }
-function scheduleReviewLoad() {
-  clearTimeout(reviewTimer);
-  reviewTimer = setTimeout(loadReviews, 250);
-}
+function selectReviewStatus(status, button) { activeReviewStatus=status; document.querySelectorAll('[data-review-status]').forEach(el=>el.classList.toggle('is-active',el===button)); loadReviews(); }
+async function loadReviewCounts(){for(const status of ['pending','approved','rejected']){const data=await fetch('/admin/api/reviews?status='+status,{credentials:'same-origin'}).then(r=>r.json());const id='review'+status[0].toUpperCase()+status.slice(1)+'Count';const el=document.getElementById(id);if(el)el.textContent=(data.reviews||[]).length;}}
 async function loadReviews() {
-  const status = document.getElementById('reviewStatus').value;
-  const search = document.getElementById('reviewSearch').value.trim();
-  const params = new URLSearchParams({status, search});
+  const params = new URLSearchParams({status:activeReviewStatus});
   const list = document.getElementById('reviewList');
   try {
     const res = await fetch('/admin/api/reviews?' + params.toString(), {credentials:'same-origin'}).then(r=>r.json());
     const reviews = res.reviews || [];
-    document.getElementById('reviewCount').textContent = `${reviews.length} review${reviews.length === 1 ? '' : 's'}`;
     if (!reviews.length) {
       list.innerHTML = `<div class="admin-review-empty"><strong>No reviews found</strong><span>Customer reviews will appear here after submission.</span></div>`;
       return;
@@ -51,9 +36,12 @@ async function loadReviews() {
     list.innerHTML = reviews.map(r => `
       <article class="admin-review-card" data-review-id="${Number(r.id || 0)}">
         <div class="admin-review-top">
-          <div>
+          <div class="admin-review-customer">
+            <span class="admin-review-avatar">${r.customer_avatar?`<img src="${escH(r.customer_avatar)}" alt="" loading="lazy">`:escH((r.customer_initials||'RC').slice(0,2))}</span>
+            <div>
             <strong>${escH(r.product_name || 'Product')}</strong>
             <span>${escH(r.customer_name || 'Customer')} · ${escH(r.customer_email || '')}</span>
+            </div>
           </div>
           <div class="admin-review-badges">
             <span class="admin-review-stars" aria-label="${Number(r.rating || 0)} out of 5 stars">${escH(r.stars || '★★★★★')}</span>
@@ -87,20 +75,20 @@ async function moderateReview(id, action) {
     method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({note})
   }).then(r=>r.json());
   toast(res.msg || (res.ok ? 'Review updated' : 'Failed'), res.ok ? 'success' : 'error');
-  if (res.ok) loadReviews();
+  if (res.ok) { loadReviews(); loadReviewCounts(); }
 }
 async function featureReview(id, featured) {
   const res = await fetch(`/admin/api/reviews/${id}/feature`, {
     method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({featured})
   }).then(r=>r.json());
   toast(res.msg || (res.ok ? 'Review updated' : 'Failed'), res.ok ? 'success' : 'error');
-  if (res.ok) loadReviews();
+  if (res.ok) { loadReviews(); loadReviewCounts(); }
 }
 async function deleteReview(id) {
   if (!confirm('Delete this review permanently?')) return;
   const res = await fetch(`/admin/api/reviews/${id}`, {method:'DELETE', credentials:'same-origin'}).then(r=>r.json());
   toast(res.msg || (res.ok ? 'Review deleted' : 'Failed'), res.ok ? 'success' : 'error');
-  if (res.ok) loadReviews();
+  if (res.ok) { loadReviews(); loadReviewCounts(); }
 }
 function toast(msg, type='info') {
   const w=document.getElementById('tw'); const t=document.createElement('div');
@@ -108,7 +96,7 @@ function toast(msg, type='info') {
   requestAnimationFrame(()=>requestAnimationFrame(()=>t.classList.add('show')));
   setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300);},2800);
 }
-loadReviews();
+loadReviewCounts(); loadReviews();
 </script>
 </div></div></div>
 </body></html>

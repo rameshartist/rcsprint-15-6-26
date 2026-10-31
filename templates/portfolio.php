@@ -44,58 +44,8 @@ $portfolioItems = is_array($portfolioItems ?? null) ? $portfolioItems : $fallbac
 $portfolioCategory = trim((string)($portfolioCategory ?? ''));
 $portfolioPage = max(1, (int)($portfolioPage ?? 1));
 $portfolioTotalPages = max(1, (int)($portfolioTotalPages ?? 1));
-$portfolioPrimaryCategories = [
-  ['label' => 'Visiting Card', 'name' => 'Visiting Card', 'slug' => 'visiting-card', 'icon' => 'fa-id-card-clip', 'aliases' => ['visiting-card','visiting-cards','business-card','business-cards','cards']],
-  ['label' => 'Brochure', 'name' => 'Brochure', 'slug' => 'brochure', 'icon' => 'fa-images', 'aliases' => ['brochure','brochures']],
-  ['label' => 'Flyer', 'name' => 'Flyer', 'slug' => 'flyer', 'icon' => 'fa-file-image', 'aliases' => ['flyer','flyers']],
-  ['label' => 'Calender', 'name' => 'Calender', 'slug' => 'calender', 'icon' => 'fa-calendar-days', 'aliases' => ['calender','calendar','calenders','calendars']],
-  ['label' => 'Rough Pad', 'name' => 'Rough Pad', 'slug' => 'rough-pad', 'icon' => 'fa-note-sticky', 'aliases' => ['rough-pad','rough-pads','notepad','notepads']],
-  ['label' => 'Flex Banner', 'name' => 'Flex Banner', 'slug' => 'flex-banner', 'icon' => 'fa-panorama', 'aliases' => ['flex-banner','flex-banners','banner','banners']],
-];
-$portfolioNormalizeKey = static function (string $value): string {
-  $value = strtolower(trim($value));
-  $value = preg_replace('/[^a-z0-9]+/', '-', $value) ?? $value;
-  return trim($value, '-');
-};
-$portfolioCategoryMap = [];
-foreach ($portfolioCategories as $cat) {
-  $slug = $portfolioNormalizeKey((string)($cat['slug'] ?? ''));
-  if ($slug === '' || isset($portfolioCategoryMap[$slug])) {
-    continue;
-  }
-  $portfolioCategoryMap[$slug] = $cat;
-}
-$portfolioPrimaryLookup = [];
-foreach ($portfolioPrimaryCategories as $index => $primaryCat) {
-  $aliases = array_map($portfolioNormalizeKey, array_merge([(string)$primaryCat['slug'], (string)$primaryCat['name'], (string)$primaryCat['label']], $primaryCat['aliases'] ?? []));
-  foreach ($portfolioCategoryMap as $slug => $cat) {
-    $catKeys = [
-      $slug,
-      $portfolioNormalizeKey((string)($cat['name'] ?? '')),
-      $portfolioNormalizeKey((string)($cat['label'] ?? '')),
-    ];
-    if (array_intersect($aliases, $catKeys)) {
-      $portfolioPrimaryCategories[$index] = array_merge($primaryCat, $cat, ['icon' => $primaryCat['icon'], 'aliases' => $primaryCat['aliases']]);
-      $portfolioPrimaryCategories[$index]['slug'] = (string)($cat['slug'] ?? $primaryCat['slug']);
-      break;
-    }
-  }
-  foreach ($aliases as $alias) {
-    if ($alias !== '') $portfolioPrimaryLookup[$alias] = true;
-  }
-  $portfolioPrimaryLookup[$portfolioNormalizeKey((string)$portfolioPrimaryCategories[$index]['slug'])] = true;
-  $portfolioPrimaryLookup[$portfolioNormalizeKey((string)($portfolioPrimaryCategories[$index]['name'] ?? ''))] = true;
-  $portfolioPrimaryLookup[$portfolioNormalizeKey((string)($portfolioPrimaryCategories[$index]['label'] ?? ''))] = true;
-}
-$portfolioOtherCategories = [];
-foreach (array_values($portfolioCategoryMap) as $cat) {
-  $slugKey = $portfolioNormalizeKey((string)($cat['slug'] ?? ''));
-  $nameKey = $portfolioNormalizeKey((string)($cat['name'] ?? $cat['label'] ?? ''));
-  if ($slugKey === '' || isset($portfolioPrimaryLookup[$slugKey]) || isset($portfolioPrimaryLookup[$nameKey])) {
-    continue;
-  }
-  $portfolioOtherCategories[] = $cat;
-}
+$portfolioPrimaryCategories = array_slice(array_values($portfolioCategories), 0, 6);
+$portfolioOtherCategories = array_slice(array_values($portfolioCategories), 6);
 $pageHero = [
   'key' => 'portfolio',
   'title' => 'Our Portfolio',
@@ -203,15 +153,7 @@ $pageHero = [
     </div>
   </section>
 
-  <section class="quick-help-section portfolio-quick-help" aria-label="Quick help and bulk order actions">
-    <div class="quick-help-container">
-      <div class="quick-help-bar">
-        <a class="quick-help-item quick-help-call" href="tel:<?= $bizPhoneHref ?>"><span class="quick-help-icon"><i class="fa-solid fa-phone-volume" aria-hidden="true"></i></span><span class="quick-help-copy"><span>Need Help? Call Us</span><strong><?= $bizPhone ?></strong></span></a>
-        <button class="quick-help-item quick-help-whatsapp" type="button" onclick="window.open('https://wa.me/<?= $bizWa ?>?text=<?= $waText ?>','_blank')"><span class="quick-help-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></span><span class="quick-help-copy"><strong>Chat with us on WhatsApp</strong><span>We are here to help!</span></span></button>
-        <a class="quick-help-item quick-help-download" href="/categories" aria-label="Download our brochure for all products"><span class="quick-help-icon"><i class="fa-solid fa-download" aria-hidden="true"></i></span><span class="quick-help-copy"><strong>Download Brochure</strong><span>For Bulk Orders</span></span></a>
-      </div>
-    </div>
-  </section>
+  <?php $quickHelpExtraClass='portfolio-quick-help'; include INCLUDE_PATH . '/partials/quick-help.php'; ?>
 
   <div class="portfolio-lightbox" id="portfolioLightbox" aria-hidden="true">
     <button class="portfolio-lightbox-close" type="button" aria-label="Close image gallery"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
