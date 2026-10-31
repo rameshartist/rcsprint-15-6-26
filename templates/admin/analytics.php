@@ -44,7 +44,7 @@ async function loadAnalytics() {
 
   const ro = res.recent_orders || [];
   document.getElementById('anRecent').innerHTML = ro.length
-    ? ro.map(o=>`<div class="aoc" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:10px"><div><div style="font-weight:700">#${escH(o.order_id)}</div><div style="font-size:12px;color:var(--text2)">${escH(o.customer_name||'')} · ${escH(o.customer_phone||'')}</div></div><div style="text-align:right"><div style="font-weight:700">${fmt(o.total_amount)}</div><div style="font-size:12px;color:var(--text2)">${escH(o.status||'')}</div></div></div></div>`).join('')
+    ? ro.map(o=>`<div class="aoc" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:10px"><div><div style="font-weight:700">${escH(o.order_id)}</div><div style="font-size:12px;color:var(--text2)">${escH(o.customer_name||'')} · ${escH(o.customer_phone||'')}</div></div><div style="text-align:right"><div style="font-weight:700">${fmt(o.total_amount)}</div><div style="font-size:12px;color:var(--text2)">${escH(o.status||'')}</div></div></div></div>`).join('')
     : '<div style="color:var(--text3);font-size:13px">No orders yet.</div>';
 }
 
