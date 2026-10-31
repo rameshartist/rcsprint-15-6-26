@@ -126,18 +126,11 @@ include INCLUDE_PATH . '/partials/header.php';
           <a href="/contact">View All FAQs</a>
         </div>
         <div class="contact-showcase-faqs">
-          <?php foreach ($contactFaqs as $idx => $faq): ?>
+          <?php $lastFaqTopic='';foreach ($contactFaqs as $idx => $faq): $topic=trim((string)($faq['topic']??''));if($topic!==''&&$topic!==$lastFaqTopic):$lastFaqTopic=$topic;?><h3 class="faq-topic-title"><?= htmlspecialchars($topic,ENT_QUOTES) ?></h3><?php endif;?>
             <details <?= $idx === 0 ? 'open' : '' ?>><summary><?= htmlspecialchars((string)($faq['question'] ?? ''), ENT_QUOTES, 'UTF-8') ?></summary><p><?= nl2br(htmlspecialchars((string)($faq['answer'] ?? ''), ENT_QUOTES, 'UTF-8')) ?></p></details>
           <?php endforeach; ?>
         </div>
       </div>
-      <aside class="contact-design-offer">
-        <div>
-          <h2>Get <span>FREE Design</span><br>on Your First Order!</h2>
-          <a href="https://wa.me/<?= $bizWa ?>?text=<?= $waText ?>" target="_blank" rel="noopener">Get Free Design</a>
-        </div>
-        <i class="fa-solid fa-gift" aria-hidden="true"></i>
-      </aside>
     </div>
   </section>
 </main>

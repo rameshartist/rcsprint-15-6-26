@@ -335,7 +335,7 @@ async function initiateCheckout(couponCode = null, customer = null, billing = nu
       currency: oData.currency || 'INR',
       order_id: oData.razorpay_order_id,
       name:     'RCS Graphic',
-      description: 'Print Order',
+      description: customQuoteId ? 'Custom Print Order' : 'Print Order',
       theme:    { color: '#1A56E8' },
       modal:    { ondismiss: () => { hidePayOv(); toast('Payment cancelled', 'warn'); } },
       handler: async resp => {
@@ -355,7 +355,7 @@ async function initiateCheckout(couponCode = null, customer = null, billing = nu
             return;
           }
           toast('Payment captured, but confirmation is loading. Opening My Orders…', 'warn');
-          setTimeout(() => { window.location.href = '/my-orders'; }, 900);
+          setTimeout(() => { window.location.href = customQuoteId ? '/profile#custom-orders' : '/my-orders'; }, 900);
         } else {
           toast(vData.msg || 'Verification failed. Contact support.', 'error');
         }
