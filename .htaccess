@@ -6,6 +6,10 @@
     # even if physical /admin or /api folders exist.
     RewriteRule ^(admin|api)(/.*)?$ index.php [L,QSA]
 
+    # Custom-order payment links must always reach the front controller. Some
+    # shared hosts otherwise attempt filesystem/content negotiation first.
+    RewriteRule ^custom-(?:cart|checkout)/.+$ index.php [L,QSA,NC]
+
     # Block access to sensitive internals and migration assets.
     RewriteRule ^(?:app|config|database)/ - [F,L,NC]
     RewriteRule ^includes/(?:debug|fix_admin_password)\.php$ - [F,L,NC]

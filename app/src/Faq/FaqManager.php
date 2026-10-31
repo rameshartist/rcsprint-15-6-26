@@ -24,6 +24,8 @@ class FaqManager
                     INDEX idx_faqs_page_active (page_key, is_active, sort_order, id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             );
+            try { \Database::query("ALTER TABLE faqs ADD COLUMN topic VARCHAR(160) NULL AFTER page_key"); } catch (\Throwable) {}
+            try { \Database::query("ALTER TABLE faqs ADD COLUMN category_id INT UNSIGNED NULL AFTER topic"); } catch (\Throwable) {}
             return true;
         } catch (\Throwable $e) {
             error_log('FAQ schema unavailable: ' . $e->getMessage());
@@ -36,15 +38,16 @@ class FaqManager
         return array_key_exists($pageKey, self::PAGE_LABELS) ? $pageKey : 'contact';
     }
 
-    public static function listByPage(string $pageKey, bool $activeOnly = true): array
+    public static function listByPage(string $pageKey, bool $activeOnly = true, ?int $categoryId = null): array
     {
         if (!self::ensureSchema()) return [];
         $pageKey = self::normalizePageKey($pageKey);
         $where = 'WHERE page_key = ?';
         $params = [$pageKey];
         if ($activeOnly) $where .= ' AND is_active = 1';
+        if ($pageKey === 'product_detail' && $categoryId) { $where .= ' AND (category_id IS NULL OR category_id = ?)'; $params[] = $categoryId; }
         return \Database::rows(
-            "SELECT id, page_key, question, answer, sort_order, is_active, created_at, updated_at
+            "SELECT id, page_key, topic, category_id, question, answer, sort_order, is_active, created_at, updated_at
              FROM faqs
              {$where}
              ORDER BY sort_order ASC, id DESC",
@@ -56,7 +59,7 @@ class FaqManager
     {
         if (!self::ensureSchema()) return [];
         return \Database::rows(
-            "SELECT id, page_key, question, answer, sort_order, is_active, created_at, updated_at
+            "SELECT id, page_key, topic, category_id, question, answer, sort_order, is_active, created_at, updated_at
              FROM faqs
              ORDER BY FIELD(page_key, 'contact', 'product_detail'), sort_order ASC, id DESC"
         );
@@ -66,6 +69,8 @@ class FaqManager
     {
         if (!self::ensureSchema()) return ['ok' => false, 'msg' => 'FAQ system is not ready.'];
         $pageKey = self::normalizePageKey((string)($data['page_key'] ?? 'contact'));
+        $topic = trim((string)($data['topic'] ?? ''));
+        $categoryId = (int)($data['category_id'] ?? 0) ?: null;
         $question = trim((string)($data['question'] ?? ''));
         $answer = trim((string)($data['answer'] ?? ''));
         $sortOrder = (int)($data['sort_order'] ?? 0);
@@ -76,17 +81,17 @@ class FaqManager
         if ($id > 0) {
             \Database::query(
                 "UPDATE faqs
-                    SET page_key = ?, question = ?, answer = ?, sort_order = ?, is_active = ?, updated_at = NOW()
+                    SET page_key = ?, topic = ?, category_id = ?, question = ?, answer = ?, sort_order = ?, is_active = ?, updated_at = NOW()
                   WHERE id = ?",
-                [$pageKey, $question, $answer, $sortOrder, $isActive, $id]
+                [$pageKey, $topic, $categoryId, $question, $answer, $sortOrder, $isActive, $id]
             );
             return ['ok' => true, 'id' => $id, 'msg' => 'FAQ updated.'];
         }
 
         $newId = (int)\Database::insert(
-            "INSERT INTO faqs (page_key, question, answer, sort_order, is_active, created_at)
-             VALUES (?, ?, ?, ?, ?, NOW())",
-            [$pageKey, $question, $answer, $sortOrder, $isActive]
+            "INSERT INTO faqs (page_key, topic, category_id, question, answer, sort_order, is_active, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
+            [$pageKey, $topic, $categoryId, $question, $answer, $sortOrder, $isActive]
         );
         return ['ok' => true, 'id' => $newId, 'msg' => 'FAQ added.'];
     }

@@ -15,6 +15,7 @@ try {
 
 // Design fee from admin settings (Admin → Settings → design_fee)
 $designFee = (float)($product['design_fee'] ?? ($settingsMap['design_fee'] ?? 0));
+$productVideo = trim((string)(($product['video_path']??'') ?: ($product['video_url'] ?? '')));
 
 // Gallery
 $imgs       = $product['images'] ?? [];
@@ -77,8 +78,10 @@ if ($reviewCount === 0 && !empty($productReviews)) {
 }
 $reviewStarCount = $reviewCount > 0 ? max(1, min(5, (int)round($reviewAverage))) : 0;
 $reviewStars = str_repeat('★', $reviewStarCount) . str_repeat('☆', 5 - $reviewStarCount);
+$campaignCoupon = strtoupper(trim((string)($_GET['coupon'] ?? '')));
+if ($campaignCoupon !== '' && !preg_match('/^[A-Z0-9_-]{2,40}$/',$campaignCoupon)) $campaignCoupon='';
 $productFaqs = [];
-try { $productFaqs = \Faq\FaqManager::listByPage('product_detail'); } catch (\Throwable) { $productFaqs = []; }
+try { $productFaqs = \Faq\FaqManager::listByPage('product_detail', true, (int)($product['category_id'] ?? 0)); } catch (\Throwable) { $productFaqs = []; }
 if (!$productFaqs) {
     $productFaqs = [
         ['question' => 'Can I upload my own design?', 'answer' => 'Yes, you can upload PDF, AI, PSD, PNG, JPG and other supported artwork files up to 50MB.'],
@@ -160,6 +163,7 @@ include INCLUDE_PATH . '/partials/header.php';
              src="<?= htmlspecialchars($primaryImg) ?>"
              alt="<?= htmlspecialchars($product['name']) ?>"
              onerror="this.src='https://placehold.co/600x600/EEF3FD/1A56E8?text=<?= urlencode($product['name']) ?>'">
+        <div class="pd-main-video" id="pdMainVideo" hidden></div>
       </div>
 
       <?php if (count($imgs) > 1): ?>
@@ -181,8 +185,7 @@ include INCLUDE_PATH . '/partials/header.php';
       <?php endif; ?>
 
       <div class="pd-gallery-actions" aria-label="Product previews">
-        <button type="button"><i class="fa-solid fa-rotate" aria-hidden="true"></i> 360° View</button>
-        <button type="button"><i class="fa-regular fa-circle-play" aria-hidden="true"></i> Video Preview</button>
+        <?php if($productVideo!==''):?><button type="button" onclick="showProductVideo()"><i class="fa-regular fa-circle-play" aria-hidden="true"></i> Video Preview</button><?php endif;?>
       </div>
 
     </div><!-- /pd-gallery -->
@@ -292,11 +295,11 @@ include INCLUDE_PATH . '/partials/header.php';
                    ondragover="event.preventDefault();this.classList.add('drag')"
                    ondragleave="this.classList.remove('drag')"
                    ondrop="handleFileDrop(event)">
-                <input type="file" id="artworkFile"
+                <input type="file" id="artworkFile" multiple
                        accept=".pdf,.ai,.eps,.png,.jpg,.jpeg,.psd,.cdr,.svg,.tif,.tiff,.zip"
                        onchange="handleFileSelect(event)">
                 <div class="design-opt-icon"><i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i></div>
-                <div class="design-opt-title">Upload File</div>
+                <div class="design-opt-title">Upload File(s)</div><button type="button" class="btn btn-outline btn-sm design-library-open" onclick="event.stopPropagation();openDesignLibrary()">Select Design File</button>
                 <div class="design-opt-copy">PDF, AI, PSD, PNG, JPG (Max 50MB)</div>
               </div>
               <label class="design-later-check" onclick="event.stopPropagation()">
@@ -347,6 +350,7 @@ include INCLUDE_PATH . '/partials/header.php';
 
       <!-- ── ACTION BUTTONS ── -->
       <div class="pd-action-stack">
+        <em id="orderHint" class="pd-order-hint pd-order-hint--above" aria-live="polite">Select quantity to enable Add to Cart.</em>
         <div class="pd-action-row">
           <button class="btn btn-blue btn-full" onclick="addToCart()" id="addCartBtn">
             <i class="fa-solid fa-cart-plus" aria-hidden="true"></i> ADD TO CART
@@ -359,9 +363,8 @@ include INCLUDE_PATH . '/partials/header.php';
           </button>
         </div>
         <div class="pd-checkout-note pd-delivery-row">
-          <span><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Delivery in 3 - 5 Working Days</span>
-          <small><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Free Delivery on Orders Above ₹999</small>
-          <em id="orderHint" class="pd-order-hint" aria-live="polite"></em>
+          <?php if(!empty($product['show_delivery_info'])&&trim((string)($product['delivery_info']??''))!==''):?><span><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> <?= htmlspecialchars((string)$product['delivery_info']) ?></span><?php endif;?>
+          <?php if(!empty($product['show_free_delivery_info'])&&trim((string)($product['free_delivery_info']??''))!==''):?><small><i class="fa-solid fa-circle-check" aria-hidden="true"></i> <?= htmlspecialchars((string)$product['free_delivery_info']) ?></small><?php endif;?>
         </div>
       </div>
 
@@ -405,7 +408,7 @@ include INCLUDE_PATH . '/partials/header.php';
           <div class="pd-tab-panel" id="pd-panel-faqs" role="tabpanel" aria-labelledby="pd-tab-faqs" data-tab-panel="faqs" hidden>
             <h2>FAQs</h2>
             <div class="pd-faq-list">
-              <?php foreach ($productFaqs as $idx => $faq): ?>
+              <?php $lastFaqTopic='';foreach ($productFaqs as $idx => $faq): $topic=trim((string)($faq['topic']??''));if($topic!==''&&$topic!==$lastFaqTopic):$lastFaqTopic=$topic;?><h3 class="faq-topic-title"><?= htmlspecialchars($topic,ENT_QUOTES) ?></h3><?php endif;?>
               <details <?= $idx === 0 ? 'open' : '' ?>>
                 <summary><?= htmlspecialchars((string)($faq['question'] ?? ''), ENT_QUOTES, 'UTF-8') ?></summary>
                 <p><?= nl2br(htmlspecialchars((string)($faq['answer'] ?? ''), ENT_QUOTES, 'UTF-8')) ?></p>
@@ -415,35 +418,15 @@ include INCLUDE_PATH . '/partials/header.php';
           </div>
         </div>
 
-        <aside class="pd-reviews-panel" aria-label="What our customers say">
-          <div class="pd-reviews-head">
-            <h2>What Our Customers Say</h2>
-          </div>
-          <div class="pd-review-cards">
-            <?php if (!empty($productReviews)): ?>
-              <?php foreach (array_slice($productReviews, 0, 3) as $review): ?>
-              <article class="pd-review-card">
-                <div class="pd-review-person">
-                  <span class="pd-review-avatar" aria-hidden="true"><?= htmlspecialchars($review['customer_initials'] ?? 'RC') ?></span>
-                  <div><strong><?= htmlspecialchars($review['customer_name'] ?? 'RCS Customer') ?></strong><span>Verified Customer</span></div>
-                </div>
-                <div class="pd-review-stars" aria-label="<?= (int)($review['rating'] ?? 0) ?> out of 5 stars"><?= htmlspecialchars($review['stars'] ?? '') ?></div>
-                <p><?= htmlspecialchars($review['comment'] ?? '') ?></p>
-              </article>
-              <?php endforeach; ?>
-            <?php else: ?>
-              <article class="pd-review-card pd-review-card-empty">
-                <div class="pd-review-person"><span class="pd-review-avatar" aria-hidden="true">★</span><div><strong>No reviews yet</strong><span>Verified customer feedback</span></div></div>
-                <div class="pd-review-stars" aria-label="0 out of 5 stars">☆☆☆☆☆</div>
-                <p>Reviews from customers who purchased this product will appear here after approval.</p>
-              </article>
-            <?php endif; ?>
-          </div>
-          <button type="button" class="pd-review-next" aria-label="Next review" onclick="document.querySelector('.pd-review-cards')?.scrollBy({left:220, behavior:'smooth'})">›</button>
+        <aside class="pd-reviews-panel customer-say-section product-review-carousel" aria-label="What our customers say">
+          <div class="customer-say-container"><h2 class="customer-say-title">What Our <span>Customers</span> Say</h2><div class="customer-say-shell"><button class="customer-slide-arrow customer-slide-prev" type="button" onclick="slideProductReviews(-1)">‹</button><div class="customer-say-track" id="productReviewTrack" role="list">
+          <?php if($productReviews):foreach($productReviews as $review):$rating=max(1,min(5,(int)($review['rating']??5)));$company=trim((string)($review['customer_company']??''));?><article class="customer-card" role="listitem"><span class="customer-card-quote">”</span><p class="customer-text"><?= htmlspecialchars((string)($review['comment']??''),ENT_QUOTES) ?></p><div class="customer-stars"><?php for($i=1;$i<=5;$i++):?><i class="fa-<?= $i<=$rating?'solid':'regular' ?> fa-star"></i><?php endfor;?></div><div class="customer-profile"><span class="customer-initials"><?php if(!empty($review['customer_avatar'])):?><img src="<?= htmlspecialchars((string)$review['customer_avatar'],ENT_QUOTES) ?>" alt=""><?php else:?><?= htmlspecialchars((string)($review['customer_initials']??'RC')) ?><?php endif;?></span><div><h3><?= htmlspecialchars((string)($review['customer_name']??'Customer')) ?></h3><?php if($company!==''):?><span><?= htmlspecialchars($company) ?></span><?php endif;?></div></div></article><?php endforeach;else:?><article class="customer-card"><p class="customer-text">Reviews from customers who purchased this product will appear here after approval.</p><div class="customer-profile"><span class="customer-initials">RC</span><div><h3>No reviews yet</h3></div></div></article><?php endif;?></div><button class="customer-slide-arrow customer-slide-next" type="button" onclick="slideProductReviews(1)">›</button></div></div>
         </aside>
       </div>
     </div>
   </section>
+
+<script>function slideProductReviews(direction){const track=document.getElementById('productReviewTrack'),card=track?.querySelector('.customer-card');if(!track||!card)return;track.scrollBy({left:direction*(card.getBoundingClientRect().width+16),behavior:'smooth'});}document.addEventListener('DOMContentLoaded',()=>{const track=document.getElementById('productReviewTrack');if(!track||matchMedia('(prefers-reduced-motion: reduce)').matches)return;setInterval(()=>{const max=track.scrollWidth-track.clientWidth;track.scrollLeft>=max-8?track.scrollTo({left:0,behavior:'smooth'}):slideProductReviews(1)},3000);});</script>
 
   <!-- RANDOM RELATED PRODUCTS -->
   <?php $relatedProductCards = is_array($relatedProducts ?? null) ? array_slice($relatedProducts, 0, 5) : []; ?>
@@ -451,7 +434,6 @@ include INCLUDE_PATH . '/partials/header.php';
   <section class="ym-section" aria-labelledby="relatedProductTitle">
     <div class="ym-head">
       <h2 id="relatedProductTitle" class="ym-title">You May <span>Also Like</span></h2>
-      <a href="/categories" class="ym-view-all">View All Products</a>
     </div>
 
     <div class="ym-grid ym-product-grid">
@@ -474,7 +456,7 @@ include INCLUDE_PATH . '/partials/header.php';
           <?php endif; ?>
         </a>
         <div class="ym-body">
-          <div class="ym-cat"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><?= htmlspecialchars($relatedCategory) ?></div>
+          <div class="ym-cat"><?= htmlspecialchars($relatedCategory) ?></div>
           <h3 class="ym-name"><?= htmlspecialchars($relatedName) ?></h3>
           <div class="ym-foot">
             <div>
@@ -493,6 +475,7 @@ include INCLUDE_PATH . '/partials/header.php';
 </div><!-- /container -->
 </div><!-- /page-wrap -->
 
+<div class="design-library-modal" id="designLibraryModal" hidden><div class="design-library-dialog"><header><div><strong>Select Design File</strong><small>Reuse files uploaded in previous orders.</small></div><button type="button" onclick="closeDesignLibrary()">×</button></header><div id="designLibraryList" class="design-library-list"></div></div></div>
 <script>
 // ── Data from PHP ──────────────────────────────────────────────
 const PRODUCT_ID  = <?= (int)$product['id'] ?>;
@@ -505,6 +488,7 @@ const IS_LOGGED_IN = <?= ($user ?? null) ? 'true' : 'false' ?>;
 const QUALITIES   = <?= json_encode($qualities) ?>;
 const DESIGN_FEE  = <?= (float)$designFee ?>;
 const PRODUCT_SLUG = <?= json_encode((string)($product['slug'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+const PRODUCT_VIDEO = <?= json_encode($productVideo, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
 try {
   const key = 'rcs_recent_products';
@@ -524,27 +508,28 @@ document.addEventListener('DOMContentLoaded', () => {
 let selectedQty        = null;
 let artworkId          = null;
 let uploadedFileName   = null;
+let artworkFiles       = [];
 let designChoice       = 'upload';
 let uploadDesignLater  = false;
 let currentBasePrice   = 0;
 
 function refreshOrderReadiness() {
   const hasQty = !!selectedQty;
+  const hasDesign = designChoice === 'rcs' || uploadDesignLater || !!artworkId;
   const addBtn = document.getElementById('addCartBtn');
   const hint = document.getElementById('orderHint');
 
-  if (addBtn) addBtn.disabled = !hasQty;
+  if (addBtn) addBtn.disabled = !(hasQty && hasDesign);
 
   if (hint) {
-    hint.textContent = hasQty
-      ? 'Looks good. You can now add to cart.'
-      : 'Select quantity to enable Add to Cart.';
+    hint.textContent = !hasQty ? 'Select quantity to enable Add to Cart.' : (!hasDesign ? 'Upload a design or choose Upload Later to enable Add to Cart.' : 'Ready to add to cart.');
   }
 }
 
 // Gallery
 function switchImg(url, el) {
   const img = document.getElementById('pdMainImg');
+  const video=document.getElementById('pdMainVideo');if(video){video.hidden=true;video.innerHTML='';}img.hidden=false;
   img.style.opacity = '0.6';
   setTimeout(() => { img.src = url; img.style.opacity = '1'; }, 150);
   document.querySelectorAll('.pd-th').forEach(t => t.classList.remove('act'));
@@ -553,6 +538,8 @@ function switchImg(url, el) {
     el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }
 }
+
+function showProductVideo(){if(!PRODUCT_VIDEO)return;const img=document.getElementById('pdMainImg'),box=document.getElementById('pdMainVideo');img.hidden=true;box.hidden=false;box.innerHTML=PRODUCT_VIDEO.includes('youtube.com/embed/')?`<iframe src="${PRODUCT_VIDEO}?autoplay=1" title="Product video" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`:`<video src="${PRODUCT_VIDEO}" controls autoplay playsinline></video>`;}
 
 function slideProductGallery(dir) {
   const thumbs = Array.from(document.querySelectorAll('.pd-th'));
@@ -670,7 +657,7 @@ function selDesignOpt(choice) {
 
   if (uploadOpt) uploadOpt.classList.toggle('sel', designChoice === 'upload');
   if (rcsOpt) rcsOpt.classList.toggle('sel', designChoice === 'rcs');
-  if (uploadPanel) uploadPanel.style.display = designChoice === 'upload' ? 'block' : 'none';
+  if (uploadPanel) uploadPanel.style.display = 'block';
   if (rcsPanel) rcsPanel.style.display = designChoice === 'rcs' ? 'block' : 'none';
 
   calcPrice();
@@ -679,15 +666,15 @@ function selDesignOpt(choice) {
 
 // File Upload
 function handleFileSelect(e) {
-  const f = e.target.files[0];
-  if (f) processFile(f);
+  const files = Array.from(e.target.files || []);
+  files.forEach(processFile);
 }
 
 function handleFileDrop(e) {
   e.preventDefault();
   document.getElementById('uploadZone').classList.remove('drag');
-  const f = e.dataTransfer.files[0];
-  if (f) processFile(f);
+  const files = Array.from(e.dataTransfer.files || []);
+  files.forEach(processFile);
 }
 
 async function processFile(file) {
@@ -713,18 +700,10 @@ async function processFile(file) {
     const data = await resp.json();
 
     if (data.ok) {
-      artworkId        = data.artwork_id;
-      uploadedFileName = data.filename;
-      document.getElementById('uploadPreview').innerHTML = `
-        <div class="upload-done">
-          <div style="font-size:24px">📄</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:700;color:var(--green)">${file.name}</div>
-            <div style="font-size:11px;color:var(--text2);margin-top:2px">${(file.size/1024/1024).toFixed(2)} MB</div>
-          </div>
-          <button onclick="removeFile()" style="color:var(--red);font-size:18px;background:none;border:none;cursor:pointer">✕</button>
-        </div>`;
+      artworkFiles.push({id:Number(data.artwork_id),name:data.filename||file.name,path:data.path||'',size:Number(file.size||0)});
+      artworkId=artworkFiles[0]?.id||null;uploadedFileName=artworkFiles[0]?.name||null;renderArtworkFiles();
       toast('Artwork uploaded!', 'success');
+      refreshOrderReadiness();
     } else {
       toast(data.msg || 'Upload failed', 'error');
     }
@@ -733,12 +712,12 @@ async function processFile(file) {
   }
 }
 
-function removeFile() {
-  artworkId = null;
-  uploadedFileName = null;
-  document.getElementById('uploadPreview').innerHTML = '';
-  document.getElementById('artworkFile').value = '';
-}
+function renderArtworkFiles(){document.getElementById('uploadPreview').innerHTML=artworkFiles.map(file=>`<div class="upload-done design-upload-chip"><span class="design-upload-thumb">${/\.(png|jpe?g|webp|gif|svg)$/i.test(file.name)&&file.path?`<img src="${file.path}" alt="">`:'📄'}</span><div><b>${String(file.name).replace(/[<>]/g,'')}</b><small>${file.size?(file.size/1024/1024).toFixed(2)+' MB':'Saved design'}</small></div><button type="button" onclick="removeArtworkFile(${file.id})" aria-label="Remove">×</button></div>`).join('');}
+async function removeArtworkFile(id){const file=artworkFiles.find(x=>x.id===Number(id));artworkFiles=artworkFiles.filter(x=>x.id!==Number(id));artworkId=artworkFiles[0]?.id||null;uploadedFileName=artworkFiles[0]?.name||null;renderArtworkFiles();refreshOrderReadiness();try{await fetch(`/api/artwork/${id}`,{method:'DELETE',headers:{'X-CSRF-TOKEN':CSRF},credentials:'same-origin'});}catch(e){}}
+function removeFile(){artworkFiles=[];artworkId=null;uploadedFileName=null;renderArtworkFiles();document.getElementById('artworkFile').value='';refreshOrderReadiness();}
+async function openDesignLibrary(){if(!<?= !empty($user['id'])?'true':'false' ?>){toast('Login to reuse saved design files.','info');return;}const modal=document.getElementById('designLibraryModal'),list=document.getElementById('designLibraryList');modal.hidden=false;list.innerHTML='<p>Loading designs…</p>';try{const data=await fetch('/api/artwork/library',{credentials:'same-origin'}).then(r=>r.json());list.innerHTML=(data.files||[]).map(file=>`<button type="button" onclick="reuseDesignFile(${Number(file.id)})"><span>${String(file.mime_type||'').startsWith('image/')?`<img src="${file.file_path}" alt="">`:'📄'}</span><b>${String(file.original_name||'Design file').replace(/[<>]/g,'')}</b><small>${new Date(file.created_at).toLocaleDateString('en-IN')}</small></button>`).join('')||'<p>No saved designs found.</p>';}catch(e){list.innerHTML='<p>Could not load designs.</p>';}}
+function closeDesignLibrary(){document.getElementById('designLibraryModal').hidden=true;}
+async function reuseDesignFile(id){const response=await fetch(`/api/artwork/${id}/reuse`,{method:'POST',headers:{'X-CSRF-TOKEN':CSRF},credentials:'same-origin'}),data=await response.json();if(!response.ok||!data.ok)return toast(data.msg||'Could not select design','error');artworkFiles.push({id:Number(data.file.id),name:data.file.name,path:data.file.path,size:Number(data.file.size||0)});artworkId=artworkFiles[0].id;uploadedFileName=artworkFiles[0].name;uploadDesignLater=false;document.getElementById('uploadLaterCheck').checked=false;selDesignOpt('upload');renderArtworkFiles();closeDesignLibrary();refreshOrderReadiness();toast('Saved design selected','success');}
 
 function toggleUploadLater(checked) {
   uploadDesignLater = !!checked;
@@ -750,12 +729,14 @@ function toggleUploadLater(checked) {
   if (zone) zone.classList.toggle('is-muted', uploadDesignLater);
   if (uploadDesignLater) {
     selDesignOpt('upload');
+    artworkFiles = [];
     artworkId = null;
     uploadedFileName = null;
     document.getElementById('uploadPreview').innerHTML = '';
     document.getElementById('artworkFile').value = '';
     toast('You can upload your design later from My Account after placing the order.', 'info');
   }
+  refreshOrderReadiness();
 }
 
 // Add to Cart
@@ -786,7 +767,9 @@ async function addToCart(opts = {}) {
         design_choice: designChoice,
         design_brief: uploadDesignLater ? 'Customer selected: I will upload design later.' : '',
         notes: uploadDesignLater ? 'User will upload design later from My Account order detail.' : '',
-        artwork_id: uploadDesignLater ? null : artworkId
+        upload_later: uploadDesignLater,
+        artwork_id: uploadDesignLater ? null : artworkId,
+        artwork_ids: uploadDesignLater ? [] : artworkFiles.map(file=>file.id)
       })
     });
 
@@ -869,6 +852,9 @@ function validateOrder() {
   if (!selectedQty) {
     return { ok: false, msg: 'Please select a quantity' };
   }
+  if (designChoice === 'upload' && !uploadDesignLater && !artworkId) {
+    return { ok: false, msg: 'Please upload a design or select Upload Design Later' };
+  }
 
   return { ok: true };
 }
@@ -927,6 +913,7 @@ function switchProductTab(tab, btn) {
 }
 
 // Init
+<?php if($campaignCoupon!==''): ?>localStorage.setItem('rcsCampaignCoupon',<?= json_encode($campaignCoupon) ?>);<?php endif; ?>
 reloadQtySlabs();
 refreshOrderReadiness();
 </script>
