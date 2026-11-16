@@ -14754,3 +14754,16 @@ body.portfolio-lightbox-open { overflow:hidden; }
 .account-order-item-card .account-artwork-gallery-item>a:last-child{padding:5px 6px;border-radius:7px;background:#2269ee;color:#fff;font-size:11px;font-weight:800;text-decoration:none}
 .account-order-item-card .account-order-item-actions{align-self:stretch;min-height:174px;border:1px solid #bbf7d0;border-radius:14px;background:#f0fdf4}
 @media(max-width:900px){.account-order-item-card .account-order-file-grid{grid-template-columns:1fr!important}}
+
+/* Compact checkout address forms, matching the saved-address fields. */
+.checkout-showcase-container{max-width:1280px}
+.checkout-address-form{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px 12px!important}
+.checkout-address-form label{font-size:12px;gap:4px}
+.checkout-address-form .checkout-input{min-height:35px!important;padding:7px 10px;font-size:13px;border-radius:7px}
+.checkout-address-form textarea.checkout-input{min-height:58px!important;resize:vertical}
+.checkout-address-defaults{display:flex;gap:8px 18px;flex-wrap:wrap}
+.checkout-address-defaults .checkout-checkline{display:flex;gap:7px;margin:0;font-size:11px}
+.checkout-address-form .checkout-checkline input{width:15px;height:15px;flex:0 0 auto}
+.checkout-shipping-card .checkout-card-title,.checkout-billing-card .checkout-card-title{margin-bottom:12px}
+@media(max-width:900px){.checkout-address-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.checkout-address-form{grid-template-columns:1fr}.checkout-address-defaults{flex-direction:column}}

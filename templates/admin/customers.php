@@ -37,6 +37,7 @@ include __DIR__ . '/layout.php';
       <button data-filter="no_orders" type="button">No Orders</button>
     </div>
     <select id="crmSort" class="crm-sort" aria-label="Sort customers">
+      <option value="id">Customer ID (Low to High)</option>
       <option value="spent">Top Spent</option>
       <option value="last_order">Last Order</option>
       <option value="orders">Most Orders</option>
@@ -121,7 +122,7 @@ function filteredCustomers() {
     const hay = `${c.name||''} ${c.phone||''} ${c.email||''} ${c.company||''}`.toLowerCase();
     if (q && !hay.includes(q)) return false;
     if (CRM_FILTER === 'all') return true;
-    if (CRM_FILTER === 'new') return c.segment === 'new';
+    if (CRM_FILTER === 'new') return true; // New shows registrations newest first, including customers without orders.
     if (CRM_FILTER === 'repeat') return Number(c.order_count||0) >= 2;
     if (CRM_FILTER === 'high_value') return Number(c.total_spent||0) >= 25000;
     if (CRM_FILTER === 'inactive') return c.segment === 'inactive';
@@ -129,6 +130,8 @@ function filteredCustomers() {
     return true;
   });
   list.sort((a,b)=> {
+    if (CRM_FILTER === 'new' || sort === 'newest') return (new Date(b.created_at || 0) - new Date(a.created_at || 0)) || Number(b.id) - Number(a.id);
+    if (sort === 'id') return Number(a.id) - Number(b.id);
     if (sort === 'last_order') return new Date(b.last_order_at || 0) - new Date(a.last_order_at || 0);
     if (sort === 'orders') return Number(b.order_count||0) - Number(a.order_count||0);
     if (sort === 'newest') return new Date(b.created_at || 0) - new Date(a.created_at || 0);
@@ -226,7 +229,7 @@ function exportCustomerCsv() {
   const csv = '\ufeff' + rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download = 'customers.csv'; a.click(); URL.revokeObjectURL(a.href);
 }
-document.querySelectorAll('.crm-tabs button').forEach(btn => btn.addEventListener('click', () => { document.querySelectorAll('.crm-tabs button').forEach(b=>b.classList.remove('act')); btn.classList.add('act'); CRM_FILTER = btn.dataset.filter || 'all'; renderCustomers(); }));
+document.querySelectorAll('.crm-tabs button').forEach(btn => btn.addEventListener('click', () => { document.querySelectorAll('.crm-tabs button').forEach(b=>b.classList.remove('act')); btn.classList.add('act'); CRM_FILTER = btn.dataset.filter || 'all'; document.getElementById('crmSort').value = CRM_FILTER === 'new' ? 'newest' : 'id'; renderCustomers(); }));
 document.getElementById('crmSearch').addEventListener('input', renderCustomers);
 document.getElementById('crmSort').addEventListener('change', renderCustomers);
 (async()=>{ await loadCustomerTemplates(); await loadCustomers(); })();

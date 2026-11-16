@@ -2729,7 +2729,7 @@ if (str_starts_with($uri, '/admin/api/')) {
              LEFT JOIN orders o ON o.user_id = u.id
              WHERE COALESCE(u.is_active, 1) = 1
              GROUP BY u.id
-             ORDER BY total_spent DESC, last_order_at DESC"
+             ORDER BY u.id ASC"
         );
         $summary = [
             'total_customers' => count($customers),

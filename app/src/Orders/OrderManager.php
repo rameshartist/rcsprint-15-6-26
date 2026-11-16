@@ -918,6 +918,10 @@ class OrderManager
         if (!is_array($billing) || empty($billing['required'])) return null;
 
         $clean = [
+            'business_name' => trim((string)($billing['business_name'] ?? '')),
+            'address_type' => in_array(($billing['address_type'] ?? 'home'), ['home','office'], true) ? $billing['address_type'] : 'home',
+            'is_default_shipping' => !empty($billing['is_default_shipping']),
+            'is_default_billing' => (bool)($billing['is_default_billing'] ?? true),
             'legal_name'    => trim((string)($billing['legal_name'] ?? '')),
             'gst_no'        => strtoupper(trim((string)($billing['gst_no'] ?? ''))),
             'phone'         => trim((string)($billing['phone'] ?? '')),
@@ -934,7 +938,7 @@ class OrderManager
             return null;
         }
 
-        if ($clean['legal_name'] === '' || $clean['address_line1'] === '' ||
+        if ($clean['address_line1'] === '' ||
             $clean['city'] === '' || $clean['state'] === '' || $clean['pincode'] === '') {
             return null;
         }
@@ -947,6 +951,11 @@ class OrderManager
 
         $clean = [
             'business_name' => trim((string)($shipping['business_name'] ?? '')),
+            'legal_name' => trim((string)($shipping['legal_name'] ?? '')),
+            'gst_no' => strtoupper(trim((string)($shipping['gst_no'] ?? ''))),
+            'address_type' => in_array(($shipping['address_type'] ?? 'home'), ['home','office'], true) ? $shipping['address_type'] : 'home',
+            'is_default_shipping' => (bool)($shipping['is_default_shipping'] ?? true),
+            'is_default_billing' => !empty($shipping['is_default_billing']),
             'address_line1' => trim((string)($shipping['address_line1'] ?? '')),
             'address_line2' => trim((string)($shipping['address_line2'] ?? '')),
             'city'          => trim((string)($shipping['city'] ?? '')),
@@ -963,44 +972,39 @@ class OrderManager
 
     private static function saveUserBillingDefault(int $userId, ?array $billing, bool $save): void
     {
-        if (!$save || !$billing || $userId <= 0) return;
-        try {
-            \Database::query("CREATE TABLE IF NOT EXISTS user_addresses (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id INT UNSIGNED NOT NULL,label VARCHAR(80) NOT NULL DEFAULT 'Address',business_name VARCHAR(180) NULL,address_line1 VARCHAR(255) NOT NULL,address_line2 VARCHAR(255) NULL,city VARCHAR(120) NOT NULL,state VARCHAR(120) NOT NULL,pincode VARCHAR(20) NOT NULL,is_default TINYINT(1) NOT NULL DEFAULT 0,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,KEY idx_user_addresses_user (user_id,is_default,id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-            try { \Database::query("ALTER TABLE user_addresses ADD COLUMN address_type VARCHAR(20) NOT NULL DEFAULT 'home' AFTER label"); } catch (\Throwable) {}
-            try { \Database::query("ALTER TABLE user_addresses ADD COLUMN is_default_shipping TINYINT(1) NOT NULL DEFAULT 0 AFTER is_default"); } catch (\Throwable) {}
-            try { \Database::query("ALTER TABLE user_addresses ADD COLUMN is_default_billing TINYINT(1) NOT NULL DEFAULT 0 AFTER is_default_shipping"); } catch (\Throwable) {}
-            try { \Database::query("ALTER TABLE user_addresses ADD COLUMN legal_name VARCHAR(180) NULL AFTER business_name"); } catch (\Throwable) {}
-            try { \Database::query("ALTER TABLE user_addresses ADD COLUMN gst_no VARCHAR(30) NULL AFTER legal_name"); } catch (\Throwable) {}
-            \Database::query("UPDATE user_addresses SET is_default_billing=0 WHERE user_id=?", [$userId]);
-            \Database::insert("INSERT INTO user_addresses (user_id,label,address_type,business_name,legal_name,gst_no,address_line1,address_line2,city,state,pincode,is_default,is_default_shipping,is_default_billing,created_at) VALUES (?,'Billing','office',?,?,?,?,?,?,?,?,0,0,1,NOW())", [$userId,$billing['legal_name']??'',$billing['legal_name']??'',$billing['gst_no']??'',$billing['address_line1']??'',$billing['address_line2']??'',$billing['city']??'',$billing['state']??'',$billing['pincode']??'']);
-        } catch (\Throwable $e) { error_log('Could not save billing address from checkout: '.$e->getMessage()); }
+        self::saveUserCheckoutAddress($userId, $billing, $save);
     }
 
     private static function saveUserShippingDefault(int $userId, ?array $shipping, bool $save): void
     {
-        if (!$save || !$shipping || $userId <= 0) return;
+        self::saveUserCheckoutAddress($userId, $shipping, $save);
+    }
+
+    private static function saveUserCheckoutAddress(int $userId, ?array $address, bool $save): void
+    {
+        if (!$save || !$address || $userId <= 0) return;
         try {
             \Database::query("CREATE TABLE IF NOT EXISTS user_addresses (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id INT UNSIGNED NOT NULL,label VARCHAR(80) NOT NULL DEFAULT 'Address',business_name VARCHAR(180) NULL,address_line1 VARCHAR(255) NOT NULL,address_line2 VARCHAR(255) NULL,city VARCHAR(120) NOT NULL,state VARCHAR(120) NOT NULL,pincode VARCHAR(20) NOT NULL,is_default TINYINT(1) NOT NULL DEFAULT 0,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,KEY idx_user_addresses_user (user_id,is_default,id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-            try { \Database::query("ALTER TABLE user_addresses ADD COLUMN address_type VARCHAR(20) NOT NULL DEFAULT 'home' AFTER label"); } catch (\Throwable) {}
-            try { \Database::query("ALTER TABLE user_addresses ADD COLUMN is_default_shipping TINYINT(1) NOT NULL DEFAULT 0 AFTER is_default"); } catch (\Throwable) {}
-            try { \Database::query("ALTER TABLE user_addresses ADD COLUMN is_default_billing TINYINT(1) NOT NULL DEFAULT 0 AFTER is_default_shipping"); } catch (\Throwable) {}
-            \Database::query("UPDATE user_addresses SET is_default=0,is_default_shipping=0 WHERE user_id=?", [$userId]);
-            \Database::insert("INSERT INTO user_addresses (user_id,label,address_type,business_name,address_line1,address_line2,city,state,pincode,is_default,is_default_shipping,created_at) VALUES (?,'Checkout','home',?,?,?,?,?,?,1,1,NOW())", [$userId,$shipping['business_name']??'',$shipping['address_line1']??'',$shipping['address_line2']??'',$shipping['city']??'',$shipping['state']??'',$shipping['pincode']??'']);
-            \Database::query(
-                "UPDATE users
-                 SET shipping_address_line1 = ?, shipping_address_line2 = ?, shipping_city = ?, shipping_state = ?, shipping_pincode = ?, profile_updated_at = NOW()
-                 WHERE id = ?",
-                [
-                    $shipping['address_line1'] ?? null,
-                    $shipping['address_line2'] ?? null,
-                    $shipping['city'] ?? null,
-                    $shipping['state'] ?? null,
-                    $shipping['pincode'] ?? null,
-                    $userId,
-                ]
-            );
+            foreach (["address_type VARCHAR(20) NOT NULL DEFAULT 'home'", "is_default_shipping TINYINT(1) NOT NULL DEFAULT 0", "is_default_billing TINYINT(1) NOT NULL DEFAULT 0", "legal_name VARCHAR(180) NULL", "gst_no VARCHAR(30) NULL"] as $column) {
+                try { \Database::query("ALTER TABLE user_addresses ADD COLUMN " . $column); } catch (\Throwable) {}
+            }
+            $shipping = !empty($address['is_default_shipping']);
+            $billing = !empty($address['is_default_billing']);
+            if ($shipping) \Database::query("UPDATE user_addresses SET is_default=0,is_default_shipping=0 WHERE user_id=?", [$userId]);
+            if ($billing) \Database::query("UPDATE user_addresses SET is_default_billing=0 WHERE user_id=?", [$userId]);
+            $type = $address['address_type'] ?? 'home';
+            \Database::insert("INSERT INTO user_addresses (user_id,label,address_type,business_name,legal_name,gst_no,address_line1,address_line2,city,state,pincode,is_default,is_default_shipping,is_default_billing,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())", [
+                $userId, ucfirst($type), $type, $address['business_name'] ?? '', $address['legal_name'] ?? '', $address['gst_no'] ?? '',
+                $address['address_line1'], $address['address_line2'] ?? '', $address['city'], $address['state'], $address['pincode'],
+                (int)$shipping, (int)$shipping, (int)$billing,
+            ]);
+            if ($shipping) {
+                \Database::query("UPDATE users SET shipping_address_line1=?,shipping_address_line2=?,shipping_city=?,shipping_state=?,shipping_pincode=?,profile_updated_at=NOW() WHERE id=?", [
+                    $address['address_line1'], $address['address_line2'] ?? '', $address['city'], $address['state'], $address['pincode'], $userId,
+                ]);
+            }
         } catch (\Throwable $e) {
-            error_log('Could not save default shipping from checkout: ' . $e->getMessage());
+            error_log('Could not save address from checkout: ' . $e->getMessage());
         }
     }
 }

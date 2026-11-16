@@ -60,34 +60,43 @@ $checkoutTotal = (float)($totals['total'] ?? 0);
         <?php endif; ?>
 
         <div id="checkoutAddressStage"<?= isset($_GET['details']) ? '' : ' hidden' ?>><section class="checkout-card checkout-shipping-card">
-          <div class="checkout-card-title checkout-card-title--actions"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i><h2>Shipping Address</h2><?php if (!empty($user['id'])): ?><button type="button" class="btn btn-outline btn-sm checkout-add-address-btn" onclick="document.getElementById('saved-address-select').value='new';selectCheckoutAddress('new')">+ Add New Address</button><?php endif; ?></div>
+          <div class="checkout-card-title checkout-card-title--actions"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i><h2>Shipping Address</h2><?php if (!empty($user['id'])): ?><button type="button" class="btn btn-outline btn-sm checkout-add-address-btn" onclick="openCheckoutAddressForm('shipping')">+ Add New Address</button><?php endif; ?></div>
           <?php if (!empty($user['id'])): ?><label class="checkout-saved-address-select" id="saved-address-wrap" hidden>Choose Shipping Address<select id="saved-address-select" class="checkout-input" onchange="selectCheckoutAddress(this.value)"><option value="">Select Shipping Address</option></select></label><div id="selectedAddressText" class="checkout-selected-address" hidden></div><?php endif; ?>
-          <div class="checkout-form-grid" id="shippingAddressFields">
-            <label class="checkout-full-field">Business / Full Name <b>*</b><input id="s-business" class="checkout-input" placeholder="Enter business or full name" autocomplete="organization"></label>
-            <label>Address Line 1 <b>*</b><input id="s-add1" class="checkout-input" placeholder="House / Flat / Building / Street" autocomplete="address-line1"></label>
-            <label>Address Line 2 <span>(Optional)</span><input id="s-add2" class="checkout-input" placeholder="Landmark / Area / Apartment" autocomplete="address-line2"></label>
-            <label>City <b>*</b><input id="s-city" class="checkout-input" placeholder="Enter your city" autocomplete="address-level2"></label>
-            <label>State <b>*</b><input id="s-state" class="checkout-input" placeholder="Select State" autocomplete="address-level1"></label>
-            <label>PIN Code <b>*</b><input id="s-pin" class="checkout-input" placeholder="Enter PIN code" autocomplete="postal-code"></label>
+          <div class="checkout-form-grid checkout-address-form" id="shippingAddressFields">
+            <label>Address Type<select id="s-type" class="checkout-input"><option value="home">Home</option><option value="office">Office</option></select></label>
+            <label>Full Name<input id="s-business" class="checkout-input" autocomplete="name"></label>
+            <label>Business Name <span>(Optional)</span><input id="s-legal" class="checkout-input" autocomplete="organization"></label>
+            <label>GST Number (GSTIN) <span>(Optional)</span><input id="s-gst" class="checkout-input" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></label>
+            <label class="checkout-full-field">Address <b>*</b><textarea id="s-add1" class="checkout-input" rows="2" autocomplete="street-address"></textarea><input id="s-add2" type="hidden" value=""></label>
+            <label>City <b>*</b><input id="s-city" class="checkout-input" autocomplete="address-level2"></label>
+            <label>State <b>*</b><input id="s-state" class="checkout-input" autocomplete="address-level1"></label>
+            <label>PIN Code <b>*</b><input id="s-pin" class="checkout-input" autocomplete="postal-code" inputmode="numeric" maxlength="6"></label>
+            <div class="checkout-full-field checkout-address-defaults">
+              <label class="checkout-checkline"><input type="checkbox" id="s-default-shipping" checked><span>Set as default delivery address</span></label>
+              <label class="checkout-checkline"><input type="checkbox" id="s-default-billing"><span>Set as default billing address</span></label>
+            </div>
           </div>
           <?php if (!empty($user['id'])): ?><label id="ship-save-wrap" class="checkout-checkline" hidden><input type="checkbox" id="ship-save-default" checked> <span>Save this address in My Account for future use</span></label><?php endif; ?>
           <div id="shipErr" class="checkout-error" style="display:none"></div>
         </section>
 
         <section class="checkout-card checkout-billing-card">
-          <div class="checkout-card-title"><i class="fa-regular fa-file-lines" aria-hidden="true"></i><h2>Billing Details <small>Tax Invoice</small></h2></div>
-          <?php if (!empty($user['id'])): ?><label class="checkout-saved-address-select" id="saved-billing-address-wrap" hidden>Choose Billing Address<select id="saved-billing-address-select" class="checkout-input" onchange="selectCheckoutBillingAddress(this.value)"><option value="">Select Billing Address</option><option value="new">Add New Billing Address</option></select></label><div id="selectedBillingAddressText" class="checkout-selected-address" hidden></div><?php endif; ?>
+          <div class="checkout-card-title checkout-card-title--actions"><i class="fa-regular fa-file-lines" aria-hidden="true"></i><h2>Billing Details <small>Tax Invoice</small></h2><?php if (!empty($user['id'])): ?><button type="button" class="btn btn-outline btn-sm checkout-add-address-btn" onclick="openCheckoutAddressForm('billing')">+ Add New Address</button><?php endif; ?></div>
+          <?php if (!empty($user['id'])): ?><label class="checkout-saved-address-select" id="saved-billing-address-wrap" hidden>Choose Billing Address<select id="saved-billing-address-select" class="checkout-input" onchange="selectCheckoutBillingAddress(this.value)"><option value="">Select Billing Address</option></select></label><div id="selectedBillingAddressText" class="checkout-selected-address" hidden></div><?php endif; ?>
           <label class="checkout-checkline"><input type="checkbox" id="bill-same-ship" onchange="syncBillingFromShipping()"> <span>Same as shipping address</span></label>
-          <div class="checkout-form-grid checkout-billing-grid">
-            <label>Legal Business Name <b>*</b><input id="b-legal" class="checkout-input" placeholder="ABC Pvt Ltd"></label>
-            <label>GST Number (GSTIN) <span>(Optional)</span><input id="b-gst" class="checkout-input" placeholder="24ABCDE1234F1Z5" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></label>
-          </div>
-          <div id="billingFields" class="checkout-form-grid checkout-billing-grid">
-            <label>Billing Address Line 1 <b>*</b><input id="b-add1" class="checkout-input" placeholder="Street / Building"></label>
-            <label>Billing Address Line 2 <span>(Optional)</span><input id="b-add2" class="checkout-input" placeholder="Area / Landmark"></label>
-            <label>City <b>*</b><input id="b-city" class="checkout-input" placeholder="Rajkot"></label>
-            <label>State <b>*</b><input id="b-state" class="checkout-input" placeholder="Gujarat"></label>
-            <label>PIN Code <b>*</b><input id="b-pin" class="checkout-input" placeholder="360001"></label>
+          <div class="checkout-form-grid checkout-address-form" id="billingFields">
+            <label>Address Type<select id="b-type" class="checkout-input"><option value="home">Home</option><option value="office">Office</option></select></label>
+            <label>Full Name<input id="b-business" class="checkout-input" autocomplete="name"></label>
+            <label>Business Name <span>(Optional)</span><input id="b-legal" class="checkout-input" autocomplete="organization"></label>
+            <label>GST Number (GSTIN) <span>(Optional)</span><input id="b-gst" class="checkout-input" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></label>
+            <label class="checkout-full-field">Address <b>*</b><textarea id="b-add1" class="checkout-input" rows="2" autocomplete="street-address"></textarea><input id="b-add2" type="hidden" value=""></label>
+            <label>City <b>*</b><input id="b-city" class="checkout-input" autocomplete="address-level2"></label>
+            <label>State <b>*</b><input id="b-state" class="checkout-input" autocomplete="address-level1"></label>
+            <label>PIN Code <b>*</b><input id="b-pin" class="checkout-input" autocomplete="postal-code" inputmode="numeric" maxlength="6"></label>
+            <div class="checkout-full-field checkout-address-defaults">
+              <label class="checkout-checkline"><input type="checkbox" id="b-default-shipping"><span>Set as default delivery address</span></label>
+              <label class="checkout-checkline"><input type="checkbox" id="b-default-billing" checked><span>Set as default billing address</span></label>
+            </div>
           </div>
           <?php if (!empty($user['id'])): ?><label id="bill-save-wrap" class="checkout-checkline" hidden><input type="checkbox" id="bill-save-default" checked> <span>Save this billing address in My Account</span></label><?php endif; ?>
           <div id="billErr" class="checkout-error" style="display:none"></div>
@@ -326,8 +335,7 @@ function syncBillingFromShipping() {
   if (select) select.value = '';
   const saveWrap = document.getElementById('bill-save-wrap');
   if (saveWrap) saveWrap.hidden = false;
-  if (!document.getElementById('b-legal')?.value.trim()) setField('b-legal', document.getElementById('s-business')?.value || '');
-  ['add1', 'add2', 'city', 'state', 'pin'].forEach(field => {
+  ['type', 'business', 'legal', 'gst', 'add1', 'add2', 'city', 'state', 'pin'].forEach(field => {
     setField('b-' + field, document.getElementById('s-' + field)?.value || '');
   });
 }
@@ -409,7 +417,7 @@ function getCheckoutBilling() {
   const gstOk = /^[0-9]{2}[A-Z0-9]{10}[0-9A-Z]{3}$/.test(gst);
   const pinOk = /^[1-9][0-9]{5}$/.test(pin);
 
-  if (!legal || !add1 || !city || !state || !pin) {
+  if (!add1 || !city || !state || !pin) {
     if (err) { err.textContent = 'Please fill all required billing address fields.'; err.style.display = 'block'; }
     return false;
   }
@@ -425,6 +433,10 @@ function getCheckoutBilling() {
 
   return {
     required: true,
+    business_name: document.getElementById('b-business')?.value.trim() || '',
+    address_type: document.getElementById('b-type')?.value || 'home',
+    is_default_shipping: !!document.getElementById('b-default-shipping')?.checked,
+    is_default_billing: !!document.getElementById('b-default-billing')?.checked,
     legal_name: legal,
     gst_no: gst,
     address_line1: add1,
@@ -444,10 +456,15 @@ function getCheckoutShipping() {
   const state = document.getElementById('s-state')?.value.trim() || '';
   const pin = document.getElementById('s-pin')?.value.trim() || '';
   const err = document.getElementById('shipErr');
+  const gst = document.getElementById('s-gst')?.value.trim().toUpperCase() || '';
+  if (gst && !/^[0-9]{2}[A-Z0-9]{10}[0-9A-Z]{3}$/.test(gst)) {
+    if (err) { err.textContent = 'Please enter a valid GSTIN.'; err.style.display = 'block'; }
+    return false;
+  }
   const pinOk = /^[1-9][0-9]{5}$/.test(pin);
 
-  if (!business || !add1 || !city || !state || !pin) {
-    if (err) { err.textContent = 'Please fill business name and delivery address details to continue.'; err.style.display = 'block'; }
+  if (!add1 || !city || !state || !pin) {
+    if (err) { err.textContent = 'Please fill the required delivery address details to continue.'; err.style.display = 'block'; }
     return false;
   }
   if (!pinOk) {
@@ -458,6 +475,11 @@ function getCheckoutShipping() {
 
   return {
     business_name: business,
+    legal_name: document.getElementById('s-legal')?.value.trim() || '',
+    gst_no: document.getElementById('s-gst')?.value.trim().toUpperCase() || '',
+    address_type: document.getElementById('s-type')?.value || 'home',
+    is_default_shipping: !!document.getElementById('s-default-shipping')?.checked,
+    is_default_billing: !!document.getElementById('s-default-billing')?.checked,
     address_line1: add1,
     address_line2: add2,
     city,
@@ -467,12 +489,24 @@ function getCheckoutShipping() {
   };
 }
 
+function openCheckoutAddressForm(kind) {
+  const billing = kind === 'billing';
+  const select = document.getElementById(billing ? 'saved-billing-address-select' : 'saved-address-select');
+  if (select) select.value = '';
+  if (billing) selectCheckoutBillingAddress('new');
+  else selectCheckoutAddress('new');
+  const prefix = billing ? 'b' : 's';
+  setField(prefix + '-type', 'home');
+  document.getElementById(prefix + '-default-shipping').checked = !billing;
+  document.getElementById(prefix + '-default-billing').checked = billing;
+}
+
 function setField(id, val = '') {
   const el = document.getElementById(id);
   if (el) el.value = val || '';
 }
-function selectCheckoutAddress(value){const address=checkoutAddresses.find(item=>String(item.id)===String(value)),fields=document.getElementById('shippingAddressFields'),preview=document.getElementById('selectedAddressText'),saveWrap=document.getElementById('ship-save-wrap');if(!address){if(fields)fields.hidden=false;if(preview)preview.hidden=true;if(saveWrap)saveWrap.hidden=value!=='new';if(value==='new'){['s-business','s-add1','s-add2','s-city','s-state','s-pin'].forEach(id=>setField(id,''));}return;}const profile=checkoutProfile.profile||{};setField('s-business',address.business_name||profile.name);setField('s-add1',address.address_line1);setField('s-add2',address.address_line2);setField('s-city',address.city);setField('s-state',address.state);setField('s-pin',address.pincode);if(fields)fields.hidden=true;if(saveWrap)saveWrap.hidden=true;if(preview){preview.hidden=false;preview.innerHTML=`<strong>${String(address.address_type||'Home').replace(/^./,c=>c.toUpperCase())}</strong><p>${[address.business_name,address.address_line1,address.city,address.state,address.pincode].filter(Boolean).join(', ')}</p><button type="button" onclick="document.getElementById('saved-address-select').value='new';selectCheckoutAddress('new')">Add New Address</button>`;}syncBillingFromShipping();}
-function selectCheckoutBillingAddress(value){const address=checkoutAddresses.find(item=>String(item.id)===String(value)),fields=document.getElementById('billingFields'),preview=document.getElementById('selectedBillingAddressText'),saveWrap=document.getElementById('bill-save-wrap'),same=document.getElementById('bill-same-ship');if(same)same.checked=false;if(!address){if(fields)fields.hidden=false;if(preview)preview.hidden=true;if(saveWrap)saveWrap.hidden=value!=='new';if(value==='new'){['b-legal','b-gst','b-add1','b-add2','b-city','b-state','b-pin'].forEach(id=>setField(id,''));}return;}const profile=checkoutProfile.profile||{};setField('b-legal',address.legal_name||address.business_name||profile.company||profile.name);setField('b-gst',address.gst_no);setField('b-add1',address.address_line1);setField('b-add2',address.address_line2);setField('b-city',address.city);setField('b-state',address.state);setField('b-pin',address.pincode);if(fields)fields.hidden=true;if(saveWrap)saveWrap.hidden=true;if(preview){preview.hidden=false;preview.innerHTML=`<strong>${String(address.address_type||'Home').replace(/^./,c=>c.toUpperCase())}</strong><p>${[address.legal_name||address.business_name,address.address_line1,address.city,address.state,address.pincode].filter(Boolean).join(', ')}</p><button type="button" onclick="document.getElementById('saved-billing-address-select').value='new';selectCheckoutBillingAddress('new')">Add New Billing Address</button>`;}}
+function selectCheckoutAddress(value){const address=checkoutAddresses.find(item=>String(item.id)===String(value)),fields=document.getElementById('shippingAddressFields'),preview=document.getElementById('selectedAddressText'),saveWrap=document.getElementById('ship-save-wrap');if(!address){if(fields)fields.hidden=false;if(preview)preview.hidden=true;if(saveWrap)saveWrap.hidden=false;if(value==='new'){['s-business','s-legal','s-gst','s-add1','s-add2','s-city','s-state','s-pin'].forEach(id=>setField(id,''));}return;}const profile=checkoutProfile.profile||{};setField('s-type',address.address_type||'home');setField('s-business',address.business_name||profile.name);setField('s-legal',address.legal_name);setField('s-gst',address.gst_no);setField('s-add1',address.address_line1);setField('s-add2',address.address_line2);setField('s-city',address.city);setField('s-state',address.state);setField('s-pin',address.pincode);if(fields)fields.hidden=true;if(saveWrap)saveWrap.hidden=true;if(preview){preview.hidden=false;preview.innerHTML=`<strong>${String(address.address_type||'Home').replace(/^./,c=>c.toUpperCase())}</strong><p>${[address.business_name,address.address_line1,address.city,address.state,address.pincode].filter(Boolean).join(', ')}</p>`;}syncBillingFromShipping();}
+function selectCheckoutBillingAddress(value){const address=checkoutAddresses.find(item=>String(item.id)===String(value)),fields=document.getElementById('billingFields'),preview=document.getElementById('selectedBillingAddressText'),saveWrap=document.getElementById('bill-save-wrap'),same=document.getElementById('bill-same-ship');if(same)same.checked=false;if(!address){if(fields)fields.hidden=false;if(preview)preview.hidden=true;if(saveWrap)saveWrap.hidden=false;if(value==='new'){['b-business','b-legal','b-gst','b-add1','b-add2','b-city','b-state','b-pin'].forEach(id=>setField(id,''));}return;}const profile=checkoutProfile.profile||{};setField('b-type',address.address_type||'home');setField('b-business',address.business_name||profile.name);setField('b-legal',address.legal_name||'');setField('b-gst',address.gst_no);setField('b-add1',address.address_line1);setField('b-add2',address.address_line2);setField('b-city',address.city);setField('b-state',address.state);setField('b-pin',address.pincode);if(fields)fields.hidden=true;if(saveWrap)saveWrap.hidden=true;if(preview){preview.hidden=false;preview.innerHTML=`<strong>${String(address.address_type||'Home').replace(/^./,c=>c.toUpperCase())}</strong><p>${[address.legal_name||address.business_name,address.address_line1,address.city,address.state,address.pincode].filter(Boolean).join(', ')}</p>`;}}
 
 async function prefillCheckoutFromProfile() {
   <?php if (empty($user['id'])): ?>
@@ -490,8 +524,8 @@ async function prefillCheckoutFromProfile() {
     const addressWrap=document.getElementById('saved-address-wrap'),addressSelect=document.getElementById('saved-address-select'),billingWrap=document.getElementById('saved-billing-address-wrap'),billingSelect=document.getElementById('saved-billing-address-select');
     const preferredAddress=checkoutAddresses.find(a=>Number(a.is_default_shipping)===1||Number(a.is_default)===1)||checkoutAddresses[0]||null;
     const preferredBillingAddress=checkoutAddresses.find(a=>Number(a.is_default_billing)===1)||checkoutAddresses[0]||null;
-    if(addressWrap&&addressSelect){addressWrap.hidden=checkoutAddresses.length===0;addressSelect.innerHTML='<option value="">Select Shipping Address</option>'+checkoutAddresses.map(a=>`<option value="${a.id}">${String(a.address_type||'home').replace(/^./,c=>c.toUpperCase())} - ${String(a.address_line1||'')}</option>`).join('')+'<option value="new">Add New Shipping Address</option>';if(preferredAddress)addressSelect.value=String(preferredAddress.id);}
-    if(billingWrap&&billingSelect){billingWrap.hidden=checkoutAddresses.length===0;billingSelect.innerHTML='<option value="">Select Billing Address</option>'+checkoutAddresses.map(a=>`<option value="${a.id}">${String(a.address_type||'home').replace(/^./,c=>c.toUpperCase())} - ${String(a.address_line1||'')}</option>`).join('')+'<option value="new">Add New Billing Address</option>';if(preferredBillingAddress)billingSelect.value=String(preferredBillingAddress.id);}
+    if(addressWrap&&addressSelect){addressWrap.hidden=checkoutAddresses.length===0;addressSelect.innerHTML='<option value="">Select Shipping Address</option>'+checkoutAddresses.map(a=>`<option value="${a.id}">${String(a.address_type||'home').replace(/^./,c=>c.toUpperCase())} - ${String(a.address_line1||'')}</option>`).join('')+'';if(preferredAddress)addressSelect.value=String(preferredAddress.id);}
+    if(billingWrap&&billingSelect){billingWrap.hidden=checkoutAddresses.length===0;billingSelect.innerHTML='<option value="">Select Billing Address</option>'+checkoutAddresses.map(a=>`<option value="${a.id}">${String(a.address_type||'home').replace(/^./,c=>c.toUpperCase())} - ${String(a.address_line1||'')}</option>`).join('')+'';if(preferredBillingAddress)billingSelect.value=String(preferredBillingAddress.id);}
     const profileName = data.profile.name || '';
     const profileCompany = data.profile.company || '';
 
@@ -504,7 +538,9 @@ async function prefillCheckoutFromProfile() {
       selectCheckoutAddress(preferredAddress.id);
     } else if (checkoutProfile.shipping) {
       if(addressSelect){addressSelect.value='new';selectCheckoutAddress('new');}
-      setField('s-business', checkoutProfile.shipping.business_name || profileCompany || profileName);
+      setField('s-business', checkoutProfile.shipping.business_name || profileName);
+      setField('s-legal', checkoutProfile.shipping.legal_name || profileCompany);
+      setField('s-gst', checkoutProfile.shipping.gst_no);
       setField('s-add1', checkoutProfile.shipping.address_line1);
       setField('s-add2', checkoutProfile.shipping.address_line2);
       setField('s-city', checkoutProfile.shipping.city);
@@ -512,14 +548,15 @@ async function prefillCheckoutFromProfile() {
       setField('s-pin', checkoutProfile.shipping.pincode);
     } else {
       if(addressSelect){addressSelect.value=checkoutAddresses.length?'':'new';selectCheckoutAddress(addressSelect.value);}
-      setField('s-business', profileCompany || profileName);
+      setField('s-business', profileName);setField('s-legal', profileCompany);
     }
 
     if (preferredBillingAddress) {
       selectCheckoutBillingAddress(preferredBillingAddress.id);toggleBillingFields();
     } else if (checkoutProfile.billing) {
       if(billingSelect){billingSelect.value='new';selectCheckoutBillingAddress('new');}
-      setField('b-legal', checkoutProfile.billing.legal_name || profileCompany || profileName);
+      setField('b-business', checkoutProfile.billing.business_name || profileName);
+      setField('b-legal', checkoutProfile.billing.legal_name || profileCompany);
       setField('b-gst', checkoutProfile.billing.gst_no);
       setField('b-add1', checkoutProfile.billing.address_line1);
       setField('b-add2', checkoutProfile.billing.address_line2);
@@ -527,7 +564,7 @@ async function prefillCheckoutFromProfile() {
       setField('b-state', checkoutProfile.billing.state);
       setField('b-pin', checkoutProfile.billing.pincode);
       toggleBillingFields();
-    } else {if(billingSelect){billingSelect.value='new';selectCheckoutBillingAddress('new');}setField('b-legal', profileCompany || profileName);}
+    } else {if(billingSelect){billingSelect.value='new';selectCheckoutBillingAddress('new');}setField('b-business', profileName);setField('b-legal', profileCompany);}
 
     toggleShippingFields();
   } catch (e) { /* ignore prefill failures */ }
@@ -535,7 +572,7 @@ async function prefillCheckoutFromProfile() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  ['s-business','s-add1','s-add2','s-city','s-state','s-pin'].forEach(id => {
+  ['s-business','s-legal','s-gst','s-add1','s-add2','s-city','s-state','s-pin'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', syncBillingFromShipping);
   });
