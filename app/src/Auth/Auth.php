@@ -29,12 +29,23 @@ class Auth
         }
 
         $identifier = trim($identifier);
+        $phoneDigits = preg_replace('/\D+/', '', $identifier);
+        $phoneCandidates = [$phoneDigits];
+        $nationalPhone = self::mobileLoginNumber($identifier);
+        if (strlen($nationalPhone) === 10) {
+            $phoneCandidates = [$nationalPhone, '91' . $nationalPhone, '0' . $nationalPhone];
+        }
+        // Restrict phone lookup to phone-shaped identifiers; email digits are not a phone.
+        $isPhone = preg_match('/^\+?[0-9\s().-]+$/', $identifier) === 1;
+        $phoneCandidates = $isPhone ? $phoneCandidates : ['', '', ''];
+        $phoneCandidates = array_pad($phoneCandidates, 3, $phoneCandidates[0]);
         $user = \Database::row(
-            "SELECT * FROM users WHERE (email = ? OR phone = ?) AND is_active = 1",
-            [$identifier, $identifier]
+            "SELECT * FROM users WHERE is_active = 1 AND (email = ? OR phone = ?
+             OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') IN (?, ?, ?))",
+            [$identifier, $identifier, ...$phoneCandidates]
         );
 
-        if (!$user || !password_verify($password, $user['password'])) {
+        if (!$user || !self::verifyCustomerPassword($password, $user)) {
             $attempts = ($_SESSION['login_attempts'][$ip] ?? 0) + 1;
             $_SESSION['login_attempts'][$ip] = $attempts;
             if ($attempts >= 5) {
@@ -492,6 +503,31 @@ class Auth
     // ══════════════════════════════════════════════════════════
     //  HELPERS
     // ══════════════════════════════════════════════════════════
+
+    private static function mobileLoginNumber(string $phone): string
+    {
+        $digits = preg_replace('/\D+/', '', $phone);
+        if ((strlen($digits) === 12 && str_starts_with($digits, '91'))
+            || (strlen($digits) === 11 && str_starts_with($digits, '0'))) {
+            return substr($digits, -10);
+        }
+        return $digits;
+    }
+
+    private static function verifyCustomerPassword(string $password, array $user): bool
+    {
+        $hash = (string)$user['password'];
+        if (password_verify($password, $hash)) return true;
+
+        // Only normalize mobile defaults that the stored hash actually verifies.
+        // A customer-selected password never gains a phone-number fallback.
+        $phone = (string)($user['phone'] ?? '');
+        $digits = preg_replace('/\D+/', '', $phone);
+        $national = self::mobileLoginNumber($phone);
+        if (strlen($national) < 6 || !preg_match('/^\+?[0-9\s().-]+$/', $password)) return false;
+        if (!hash_equals($national, self::mobileLoginNumber($password))) return false;
+        return password_verify($digits, $hash) || password_verify($national, $hash);
+    }
 
     private static function publicUser(array $user): array
     {

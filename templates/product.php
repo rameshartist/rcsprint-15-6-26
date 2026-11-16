@@ -299,13 +299,14 @@ include INCLUDE_PATH . '/partials/header.php';
                        accept=".pdf,.ai,.eps,.png,.jpg,.jpeg,.psd,.cdr,.svg,.tif,.tiff,.zip"
                        onchange="handleFileSelect(event)">
                 <div class="design-opt-icon"><i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i></div>
-                <div class="design-opt-title">Upload File(s)</div><button type="button" class="btn btn-outline btn-sm design-library-open" onclick="event.stopPropagation();openDesignLibrary()">Select Design File</button>
+                <div class="design-opt-title">Upload File(s)</div>
                 <div class="design-opt-copy">PDF, AI, PSD, PNG, JPG (Max 50MB)</div>
               </div>
               <label class="design-later-check" onclick="event.stopPropagation()">
                 <input type="checkbox" id="uploadLaterCheck" onchange="toggleUploadLater(this.checked)">
                 <span>I will Upload Design Later</span>
               </label>
+              <div class="design-library-actions"><button type="button" class="btn btn-outline btn-sm design-library-open" onclick="event.stopPropagation();openDesignLibrary()">Select Design File</button></div>
               <div class="design-later-note" id="uploadLaterNote" hidden>
                 No problem. Your order will be saved as <strong>Customer Upload</strong>, and you can upload the design later from <strong>My Account &gt; My Orders</strong>.
               </div>
