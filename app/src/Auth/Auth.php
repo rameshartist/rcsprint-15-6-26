@@ -301,8 +301,23 @@ class Auth
         return ['ok' => true];
     }
 
-    public static function user(): ?array  { return $_SESSION['user'] ?? null; }
-    public static function check(): bool   { return !empty($_SESSION['user']['id']); }
+    public static function user(): ?array
+    {
+        $user = $_SESSION['user'] ?? null;
+        if (empty($user['id'])) return null;
+        // Revalidate once per request so a deleted account cannot keep using its old session.
+        static $activeAccounts = [];
+        $id = (int)$user['id'];
+        if (!array_key_exists($id, $activeAccounts)) {
+            $activeAccounts[$id] = (bool)\Database::row('SELECT id FROM users WHERE id = ? AND is_active = 1', [$id]);
+        }
+        if (!$activeAccounts[$id]) {
+            unset($_SESSION['user'], $_SESSION['cart']);
+            return null;
+        }
+        return $user;
+    }
+    public static function check(): bool { return self::user() !== null; }
 
     public static function require(): void
     {

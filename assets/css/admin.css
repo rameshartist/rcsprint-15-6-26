@@ -1325,17 +1325,20 @@ body.admin-page-orders .ord-actions--compact .aoc-btn--address{color:#e54818!imp
 @media(max-width:1450px){body.admin-page-orders .adm-order-action-strip{grid-template-columns:210px minmax(0,1fr)}body.admin-page-orders .ord-actions--compact .aoc-btn{padding-inline:6px;font-size:10px}}
 @media(max-width:1150px){body.admin-page-orders .ord-design-head{grid-template-columns:minmax(300px,1fr) minmax(140px,.4fr) minmax(210px,.7fr)}body.admin-page-orders .adm-order-action-strip{grid-template-columns:1fr}body.admin-page-orders .ord-actions--compact{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:700px){body.admin-page-orders .ord-design-head{grid-template-columns:1fr}body.admin-page-orders .ord-item-price{text-align:left}body.admin-page-orders .ord-actions--compact{grid-template-columns:1fr 1fr}}
-/* Keep proof confirmation outside the thumbnail scroller and strengthen quick actions. */
+/* Keep proof confirmation outside the thumbnail scroller. */
 body.admin-page-orders .ord-design-proof-panel{position:relative;padding-right:104px}
 body.admin-page-orders .ord-design-proof-panel .ord-multi-artworks{width:100%;padding-right:0;overflow-x:auto}
 body.admin-page-orders .ord-design-proof-panel .ord-proof-wa{position:absolute;top:42px;right:14px;bottom:14px;width:76px;min-height:0;margin:0;z-index:4;box-shadow:0 8px 18px rgba(13,148,76,.2)}
 body.admin-page-orders .ord-item-price{justify-self:center;margin-left:-22px;text-align:center}
-body.admin-page-orders .ord-actions--compact .aoc-btn{color:#fff!important;border-color:transparent!important;box-shadow:0 7px 16px rgba(15,23,42,.14)}
-body.admin-page-orders .ord-actions--compact .aoc-btn--confirm{background:#079455!important;color:#fff!important}
-body.admin-page-orders .ord-actions--compact .aoc-btn--call{background:#2563eb!important;color:#fff!important}
-body.admin-page-orders .ord-actions--compact .aoc-btn--wa,body.admin-page-orders .ord-actions--compact .aoc-btn--approve-wa{background:#16a34a!important;color:#fff!important}
-body.admin-page-orders .ord-actions--compact .aoc-btn--invoice{background:#5b21b6!important;color:#fff!important}
-body.admin-page-orders .ord-actions--compact .aoc-btn--invoice-upload{background:#6d28d9!important;color:#fff!important}
-body.admin-page-orders .ord-actions--compact .aoc-btn--address{background:#ea580c!important;color:#fff!important}
-body.admin-page-orders .ord-actions--compact .aoc-btn .aoc-ico,body.admin-page-orders .ord-actions--compact .aoc-btn span{color:#fff!important}
+/* White-based action colors keep labels and icons readable. */
+body.admin-page-orders .ord-actions--compact .aoc-btn{background:var(--action-bg,#f8fafc)!important;color:var(--action-ink,#334155)!important;border:1px solid var(--action-border,#cbd5e1)!important;box-shadow:0 2px 5px rgba(15,23,42,.04);transition:background .15s,box-shadow .15s}
+body.admin-page-orders .ord-actions--compact .aoc-btn--confirm{--action-bg:#f0fdf4;--action-ink:#166534;--action-border:#bbf7d0}
+body.admin-page-orders .ord-actions--compact .aoc-btn--call{--action-bg:#eff6ff;--action-ink:#1e40af;--action-border:#bfdbfe}
+body.admin-page-orders .ord-actions--compact .aoc-btn--wa,body.admin-page-orders .ord-actions--compact .aoc-btn--approve-wa{--action-bg:#ecfdf5;--action-ink:#065f46;--action-border:#a7f3d0}
+body.admin-page-orders .ord-actions--compact .aoc-btn--invoice{--action-bg:#f5f3ff;--action-ink:#5b21b6;--action-border:#ddd6fe}
+body.admin-page-orders .ord-actions--compact .aoc-btn--invoice-upload{--action-bg:#faf5ff;--action-ink:#6b21a8;--action-border:#e9d5ff}
+body.admin-page-orders .ord-actions--compact .aoc-btn--address{--action-bg:#fff7ed;--action-ink:#9a3412;--action-border:#fed7aa}
+body.admin-page-orders .ord-actions--compact .aoc-btn .aoc-ico,body.admin-page-orders .ord-actions--compact .aoc-btn span{color:inherit!important}
+body.admin-page-orders .ord-actions--compact .aoc-btn:hover{background:#fff!important;box-shadow:0 3px 10px rgba(15,23,42,.1)}
+body.admin-page-orders .ord-actions--compact .aoc-btn:focus-visible{outline:3px solid var(--action-ink,#334155);outline-offset:3px}
 @media(max-width:700px){body.admin-page-orders .ord-item-price{justify-self:start;margin-left:0;text-align:left}}

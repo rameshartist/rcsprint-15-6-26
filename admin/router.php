@@ -2729,7 +2729,7 @@ if (str_starts_with($uri, '/admin/api/')) {
              LEFT JOIN orders o ON o.user_id = u.id
              WHERE COALESCE(u.is_active, 1) = 1
              GROUP BY u.id
-             ORDER BY u.id ASC"
+             ORDER BY u.name ASC, u.id ASC"
         );
         $summary = [
             'total_customers' => count($customers),
@@ -2777,15 +2777,15 @@ if (str_starts_with($uri, '/admin/api/')) {
         \Orders\AdminAudit::log('customer_created',"Customer #{$id} created by admin");json(['ok'=>true,'id'=>$id,'customer_code'=>$customerCode]);
     }
     if (preg_match('#^/admin/api/customers/(\d+)$#', $uri, $m) && $method === 'DELETE') {
-        $customerId = (int)$m[1];
-        $customer = Database::row("SELECT id, name FROM users WHERE id = ? LIMIT 1", [$customerId]);
-        if (!$customer) json(['ok' => false, 'msg' => 'Customer not found'], 404);
+        \Auth\Auth::verifyCsrf();
         try {
-            Database::query("UPDATE users SET is_active = 0 WHERE id = ?", [$customerId]);
-            \Orders\AdminAudit::log('customer_deactivated', "Customer #{$customerId}: " . ($customer['name'] ?? ''));
-            json(['ok' => true, 'msg' => 'Customer deleted/deactivated.']);
-        } catch (\Throwable) {
-            json(['ok' => false, 'msg' => 'Could not delete customer.'], 500);
+            $deleted = \Customers\CustomerManager::delete((int)$m[1]);
+            if (!$deleted) json(['ok' => false, 'msg' => 'Customer not found'], 404);
+            \Orders\AdminAudit::log('customer_deleted', 'Customer #' . (int)$m[1] . ' and related database records permanently deleted');
+            json(['ok' => true, 'msg' => 'Customer permanently deleted.']);
+        } catch (\Throwable $e) {
+            error_log('Customer deletion failed: ' . $e->getMessage());
+            json(['ok' => false, 'msg' => 'Could not delete customer. No records were removed.'], 500);
         }
     }
     if ($uri === '/admin/api/approvals' && $method === 'GET') {

@@ -291,7 +291,7 @@ include INCLUDE_PATH . '/partials/header.php';
           <div class="design-opt sel" id="dopt-upload" onclick="selDesignOpt('upload')">
             <div id="panel-upload">
               <div class="upload-zone" id="uploadZone"
-                   onclick="event.stopPropagation();document.getElementById('artworkFile').click()"
+                   onclick="event.stopPropagation();selDesignOpt('upload');document.getElementById('artworkFile').click()"
                    ondragover="event.preventDefault();this.classList.add('drag')"
                    ondragleave="this.classList.remove('drag')"
                    ondrop="handleFileDrop(event)">
@@ -306,7 +306,7 @@ include INCLUDE_PATH . '/partials/header.php';
                 <input type="checkbox" id="uploadLaterCheck" onchange="toggleUploadLater(this.checked)">
                 <span>I will Upload Design Later</span>
               </label>
-              <div class="design-library-actions"><button type="button" class="btn btn-outline btn-sm design-library-open" onclick="event.stopPropagation();openDesignLibrary()">Select Design File</button></div>
+              <?php if (!empty($user['id'])): ?><div class="design-library-actions"><button type="button" class="btn btn-outline btn-sm design-library-open" onclick="event.stopPropagation();openDesignLibrary()">Select Design File</button></div><?php endif; ?>
               <div class="design-later-note" id="uploadLaterNote" hidden>
                 No problem. Your order will be saved as <strong>Customer Upload</strong>, and you can upload the design later from <strong>My Account &gt; My Orders</strong>.
               </div>
@@ -476,7 +476,13 @@ include INCLUDE_PATH . '/partials/header.php';
 </div><!-- /container -->
 </div><!-- /page-wrap -->
 
-<div class="design-library-modal" id="designLibraryModal" hidden><div class="design-library-dialog"><header><div><strong>Select Design File</strong><small>Reuse files uploaded in previous orders.</small></div><button type="button" onclick="closeDesignLibrary()">×</button></header><div id="designLibraryList" class="design-library-list"></div></div></div>
+<div class="design-library-modal" id="designLibraryModal" hidden>
+  <div class="design-library-dialog" role="dialog" aria-modal="true" aria-labelledby="designLibraryTitle" aria-describedby="designLibraryHelp" aria-busy="false" tabindex="-1">
+    <header><div><strong id="designLibraryTitle">Select Design Files</strong><small id="designLibraryHelp">Choose one or more files from your previous uploads.</small></div><button type="button" id="designLibraryClose" onclick="closeDesignLibrary()" aria-label="Close design library">×</button></header>
+    <div id="designLibraryList" class="design-library-list"></div>
+    <footer class="design-library-footer"><span id="designLibraryCount" role="status">0 files selected</span><button type="button" class="btn btn-primary" id="designLibraryApply" onclick="reuseSelectedDesignFiles()" disabled>Use Selected Files</button></footer>
+  </div>
+</div>
 <script>
 // ── Data from PHP ──────────────────────────────────────────────
 const PRODUCT_ID  = <?= (int)$product['id'] ?>;
@@ -667,12 +673,15 @@ function selDesignOpt(choice) {
 
 // File Upload
 function handleFileSelect(e) {
+  selDesignOpt('upload');
   const files = Array.from(e.target.files || []);
   files.forEach(processFile);
 }
 
 function handleFileDrop(e) {
   e.preventDefault();
+  e.stopPropagation();
+  selDesignOpt('upload');
   document.getElementById('uploadZone').classList.remove('drag');
   const files = Array.from(e.dataTransfer.files || []);
   files.forEach(processFile);
@@ -716,9 +725,102 @@ async function processFile(file) {
 function renderArtworkFiles(){document.getElementById('uploadPreview').innerHTML=artworkFiles.map(file=>`<div class="upload-done design-upload-chip"><span class="design-upload-thumb">${/\.(png|jpe?g|webp|gif|svg)$/i.test(file.name)&&file.path?`<img src="${file.path}" alt="">`:'📄'}</span><div><b>${String(file.name).replace(/[<>]/g,'')}</b><small>${file.size?(file.size/1024/1024).toFixed(2)+' MB':'Saved design'}</small></div><button type="button" onclick="removeArtworkFile(${file.id})" aria-label="Remove">×</button></div>`).join('');}
 async function removeArtworkFile(id){const file=artworkFiles.find(x=>x.id===Number(id));artworkFiles=artworkFiles.filter(x=>x.id!==Number(id));artworkId=artworkFiles[0]?.id||null;uploadedFileName=artworkFiles[0]?.name||null;renderArtworkFiles();refreshOrderReadiness();try{await fetch(`/api/artwork/${id}`,{method:'DELETE',headers:{'X-CSRF-TOKEN':CSRF},credentials:'same-origin'});}catch(e){}}
 function removeFile(){artworkFiles=[];artworkId=null;uploadedFileName=null;renderArtworkFiles();document.getElementById('artworkFile').value='';refreshOrderReadiness();}
-async function openDesignLibrary(){if(!<?= !empty($user['id'])?'true':'false' ?>){toast('Login to reuse saved design files.','info');return;}const modal=document.getElementById('designLibraryModal'),list=document.getElementById('designLibraryList');modal.hidden=false;list.innerHTML='<p>Loading designs…</p>';try{const data=await fetch('/api/artwork/library',{credentials:'same-origin'}).then(r=>r.json());list.innerHTML=(data.files||[]).map(file=>`<button type="button" onclick="reuseDesignFile(${Number(file.id)})"><span>${String(file.mime_type||'').startsWith('image/')?`<img src="${file.file_path}" alt="">`:'📄'}</span><b>${String(file.original_name||'Design file').replace(/[<>]/g,'')}</b><small>${new Date(file.created_at).toLocaleDateString('en-IN')}</small></button>`).join('')||'<p>No saved designs found.</p>';}catch(e){list.innerHTML='<p>Could not load designs.</p>';}}
-function closeDesignLibrary(){document.getElementById('designLibraryModal').hidden=true;}
-async function reuseDesignFile(id){const response=await fetch(`/api/artwork/${id}/reuse`,{method:'POST',headers:{'X-CSRF-TOKEN':CSRF},credentials:'same-origin'}),data=await response.json();if(!response.ok||!data.ok)return toast(data.msg||'Could not select design','error');artworkFiles.push({id:Number(data.file.id),name:data.file.name,path:data.file.path,size:Number(data.file.size||0)});artworkId=artworkFiles[0].id;uploadedFileName=artworkFiles[0].name;uploadDesignLater=false;document.getElementById('uploadLaterCheck').checked=false;selDesignOpt('upload');renderArtworkFiles();closeDesignLibrary();refreshOrderReadiness();toast('Saved design selected','success');}
+let selectedLibraryIds = new Set();
+let designLibraryBusy = false;
+let designLibraryReturnFocus = null;
+const escapeDesignText = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+function updateDesignLibrarySelection() {
+  const count = selectedLibraryIds.size;
+  document.getElementById('designLibraryCount').textContent = `${count} file${count === 1 ? '' : 's'} selected`;
+  const apply = document.getElementById('designLibraryApply');
+  apply.disabled = designLibraryBusy || count === 0;
+  apply.textContent = designLibraryBusy ? 'Selecting files…' : 'Use Selected Files';
+  document.getElementById('designLibraryClose').disabled = designLibraryBusy;
+  document.querySelector('#designLibraryModal .design-library-dialog').setAttribute('aria-busy', String(designLibraryBusy));
+}
+function toggleLibraryDesign(id, checked) {
+  if (designLibraryBusy) return;
+  checked ? selectedLibraryIds.add(Number(id)) : selectedLibraryIds.delete(Number(id));
+  updateDesignLibrarySelection();
+}
+async function openDesignLibrary() {
+  if (!<?= !empty($user['id'])?'true':'false' ?>) { toast('Login to reuse saved design files.', 'info'); return; }
+  const modal = document.getElementById('designLibraryModal');
+  const list = document.getElementById('designLibraryList');
+  designLibraryReturnFocus = document.activeElement;
+  selectedLibraryIds.clear();
+  modal.hidden = false;
+  list.innerHTML = '<p>Loading designs…</p>';
+  updateDesignLibrarySelection();
+  document.getElementById('designLibraryClose').focus();
+  try {
+    const response = await fetch('/api/artwork/library', {credentials:'same-origin'});
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error('Could not load designs.');
+    list.innerHTML = (data.files || []).map(file => {
+      const id = Number(file.id);
+      const path = String(file.file_path || '');
+      const preview = String(file.mime_type || '').startsWith('image/') && path.startsWith('/uploads/')
+        ? `<img src="${escapeDesignText(path)}" alt="" loading="lazy">` : '📄';
+      return `<label class="design-library-file"><input type="checkbox" value="${id}" onchange="toggleLibraryDesign(${id},this.checked)"><span class="design-library-thumb">${preview}</span><b>${escapeDesignText(file.original_name || 'Design file')}</b><small>${escapeDesignText(new Date(String(file.created_at).replace(' ', 'T')).toLocaleDateString('en-IN'))}</small></label>`;
+    }).join('') || '<p>No saved designs found.</p>';
+  } catch (e) { list.innerHTML = '<p>Could not load designs. Please close and try again.</p>'; }
+}
+function closeDesignLibrary() {
+  if (designLibraryBusy) return;
+  document.getElementById('designLibraryModal').hidden = true;
+  designLibraryReturnFocus?.focus();
+}
+async function reuseSelectedDesignFiles() {
+  if (designLibraryBusy || !selectedLibraryIds.size) return;
+  designLibraryBusy = true;
+  const list = document.getElementById('designLibraryList');
+  list.querySelectorAll('input').forEach(input => { input.disabled = true; });
+  updateDesignLibrarySelection();
+  let added = 0;
+  let selectionError = '';
+  try {
+    for (const id of [...selectedLibraryIds]) {
+      const response = await fetch(`/api/artwork/${id}/reuse`, {method:'POST', headers:{'X-CSRF-TOKEN':CSRF}, credentials:'same-origin'});
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.msg || 'Could not select design.');
+      artworkFiles.push({id:Number(data.file.id),name:data.file.name,path:data.file.path,size:Number(data.file.size || 0)});
+      selectedLibraryIds.delete(id);
+      const input = list.querySelector(`input[value="${id}"]`);
+      if (input) input.checked = false;
+      added++;
+    }
+  } catch (e) { selectionError = e.message || 'Could not select designs. Please retry the remaining files.'; }
+  finally {
+    if (added) {
+      artworkId = artworkFiles[0].id;
+      uploadedFileName = artworkFiles[0].name;
+      uploadDesignLater = false;
+      document.getElementById('uploadLaterCheck').checked = false;
+      document.getElementById('uploadLaterNote').hidden = true;
+      document.getElementById('uploadZone').classList.remove('is-muted');
+      selDesignOpt('upload');
+      renderArtworkFiles();
+      refreshOrderReadiness();
+      if (!selectionError) toast(`${added} design file${added === 1 ? '' : 's'} selected`, 'success');
+    }
+    designLibraryBusy = false;
+    list.querySelectorAll('input').forEach(input => { input.disabled = false; });
+    updateDesignLibrarySelection();
+    if (selectionError) toast(`${added ? added + ' file(s) selected. ' : ''}${selectionError} Retry the remaining selections.`, 'error');
+    if (!selectedLibraryIds.size) closeDesignLibrary();
+  }
+}
+document.getElementById('designLibraryModal').addEventListener('keydown', event => {
+  if (event.key === 'Escape') { event.preventDefault(); closeDesignLibrary(); }
+  if (event.key !== 'Tab') return;
+  const dialog = event.currentTarget.querySelector('.design-library-dialog');
+  const controls = [...dialog.querySelectorAll('button:not(:disabled),input:not(:disabled)')];
+  if (!controls.length) { event.preventDefault(); dialog.focus(); return; }
+  const first = controls[0], last = controls[controls.length - 1];
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+});
 
 function toggleUploadLater(checked) {
   uploadDesignLater = !!checked;

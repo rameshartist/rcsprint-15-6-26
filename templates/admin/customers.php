@@ -30,19 +30,19 @@ include __DIR__ . '/layout.php';
     <label class="crm-search"><span>🔎</span><input id="crmSearch" type="search" placeholder="Search name, phone, email, company..." autocomplete="off"></label>
     <div class="crm-tabs" role="tablist" aria-label="Customer filters">
       <button class="act" data-filter="all" type="button">All</button>
-      <button data-filter="new" type="button">New</button>
+      <button data-filter="new" type="button" title="Registered in the last 30 days">New (30 days)</button>
       <button data-filter="repeat" type="button">Repeat</button>
       <button data-filter="high_value" type="button">High Value</button>
       <button data-filter="inactive" type="button">Inactive</button>
       <button data-filter="no_orders" type="button">No Orders</button>
     </div>
     <select id="crmSort" class="crm-sort" aria-label="Sort customers">
+      <option value="name">Name A–Z</option>
       <option value="id">Customer ID (Low to High)</option>
       <option value="spent">Top Spent</option>
       <option value="last_order">Last Order</option>
       <option value="orders">Most Orders</option>
       <option value="newest">Newest Joined</option>
-      <option value="name">Name A-Z</option>
     </select>
   </section>
 
@@ -118,11 +118,14 @@ function renderStats(s) {
 function filteredCustomers() {
   const q = document.getElementById('crmSearch').value.trim().toLowerCase();
   const sort = document.getElementById('crmSort').value;
+  const registeredAt = c => Date.parse(String(c.created_at || '').replace(' ', 'T')) || 0;
+  const now = Date.now();
+  const recentSince = now - 30 * 86400000;
   let list = CRM_CUSTOMERS.filter(c => {
     const hay = `${c.name||''} ${c.phone||''} ${c.email||''} ${c.company||''}`.toLowerCase();
     if (q && !hay.includes(q)) return false;
     if (CRM_FILTER === 'all') return true;
-    if (CRM_FILTER === 'new') return true; // New shows registrations newest first, including customers without orders.
+    if (CRM_FILTER === 'new') return registeredAt(c) >= recentSince && registeredAt(c) <= now;
     if (CRM_FILTER === 'repeat') return Number(c.order_count||0) >= 2;
     if (CRM_FILTER === 'high_value') return Number(c.total_spent||0) >= 25000;
     if (CRM_FILTER === 'inactive') return c.segment === 'inactive';
@@ -130,12 +133,11 @@ function filteredCustomers() {
     return true;
   });
   list.sort((a,b)=> {
-    if (CRM_FILTER === 'new' || sort === 'newest') return (new Date(b.created_at || 0) - new Date(a.created_at || 0)) || Number(b.id) - Number(a.id);
+    if (CRM_FILTER === 'new' || sort === 'newest') return (registeredAt(b) - registeredAt(a)) || Number(b.id) - Number(a.id);
     if (sort === 'id') return Number(a.id) - Number(b.id);
     if (sort === 'last_order') return new Date(b.last_order_at || 0) - new Date(a.last_order_at || 0);
     if (sort === 'orders') return Number(b.order_count||0) - Number(a.order_count||0);
-    if (sort === 'newest') return new Date(b.created_at || 0) - new Date(a.created_at || 0);
-    if (sort === 'name') return String(a.name||'').localeCompare(String(b.name||''));
+    if (sort === 'name') return String(a.name||'').trim().localeCompare(String(b.name||'').trim(), 'en', {sensitivity:'base', numeric:true}) || Number(a.id) - Number(b.id);
     return Number(b.total_spent||0) - Number(a.total_spent||0);
   });
   return list;
@@ -216,20 +218,23 @@ function sendWa(id, type) {
 }
 async function deleteCustomer(id) {
   const c = CRM_CUSTOMERS.find(x=>Number(x.id)===Number(id));
-  if (!confirm(`Delete/deactivate customer ${c?.name || '#' + id}?`)) return;
-  const res = await fetch(`/admin/api/customers/${id}`, {method:'DELETE', credentials:'same-origin'}).then(r=>r.json());
-  if (!res.ok) return alert(res.msg || 'Could not delete customer');
-  CRM_CUSTOMERS = CRM_CUSTOMERS.filter(x => Number(x.id) !== Number(id));
-  closeCustomerDrawer();
-  renderStats(buildSummary(CRM_CUSTOMERS));
-  renderCustomers();
+  if (!confirm(`Permanently delete customer ${c?.name || '#' + id}, their orders, saved addresses, cart, designs and related database records? This cannot be undone.`)) return;
+  try {
+    const response = await fetch(`/admin/api/customers/${id}`, {method:'DELETE', headers:{'X-CSRF-TOKEN':CRM_CSRF}, credentials:'same-origin'});
+    const res = await response.json();
+    if (!response.ok || !res.ok) return alert(res.msg || 'Could not delete customer');
+    CRM_CUSTOMERS = CRM_CUSTOMERS.filter(x => Number(x.id) !== Number(id));
+    closeCustomerDrawer();
+    renderStats(buildSummary(CRM_CUSTOMERS));
+    renderCustomers();
+  } catch (e) { alert('Could not confirm deletion. Refresh the customer list before retrying.'); }
 }
 function exportCustomerCsv() {
   const rows = [['Customer ID','Name','Phone','Email','Company','Orders','Total Spent','Last Order']].concat(filteredCustomers().map(c=>[c.customer_code,c.name,c.phone,c.email,c.company,c.order_count,c.total_spent,c.last_order_at]));
   const csv = '\ufeff' + rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download = 'customers.csv'; a.click(); URL.revokeObjectURL(a.href);
 }
-document.querySelectorAll('.crm-tabs button').forEach(btn => btn.addEventListener('click', () => { document.querySelectorAll('.crm-tabs button').forEach(b=>b.classList.remove('act')); btn.classList.add('act'); CRM_FILTER = btn.dataset.filter || 'all'; document.getElementById('crmSort').value = CRM_FILTER === 'new' ? 'newest' : 'id'; renderCustomers(); }));
+document.querySelectorAll('.crm-tabs button').forEach(btn => btn.addEventListener('click', () => { document.querySelectorAll('.crm-tabs button').forEach(b=>b.classList.remove('act')); btn.classList.add('act'); CRM_FILTER = btn.dataset.filter || 'all'; document.getElementById('crmSort').value = CRM_FILTER === 'new' ? 'newest' : 'name'; renderCustomers(); }));
 document.getElementById('crmSearch').addEventListener('input', renderCustomers);
 document.getElementById('crmSort').addEventListener('change', renderCustomers);
 (async()=>{ await loadCustomerTemplates(); await loadCustomers(); })();

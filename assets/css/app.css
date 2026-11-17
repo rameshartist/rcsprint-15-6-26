@@ -14767,3 +14767,14 @@ body.portfolio-lightbox-open { overflow:hidden; }
 .checkout-shipping-card .checkout-card-title,.checkout-billing-card .checkout-card-title{margin-bottom:12px}
 @media(max-width:900px){.checkout-address-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.checkout-address-form{grid-template-columns:1fr}.checkout-address-defaults{flex-direction:column}}
+
+/* Saved artwork supports selecting several files before applying. */
+.design-library-list .design-library-file{position:relative;display:grid;align-content:start;gap:8px;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#1e293b;cursor:pointer;min-width:0}
+.design-library-file:has(input:checked){background:#eff6ff;border-color:#2563eb;box-shadow:0 0 0 1px #2563eb}
+.design-library-file:focus-within{outline:2px solid #2563eb;outline-offset:2px}
+.design-library-file input{width:20px;height:20px;accent-color:#2563eb;justify-self:start}
+.design-library-file .design-library-thumb{display:grid;place-items:center;height:100px;overflow:hidden;border-radius:8px;background:#f1f5f9;font-size:30px}
+.design-library-thumb img{width:100%;height:100%;object-fit:contain}
+.design-library-file b{overflow-wrap:anywhere;font-size:13px}.design-library-file small{color:#64748b}
+.design-library-footer{position:sticky;bottom:-20px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 0;margin-top:12px;border-top:1px solid #e2e8f0;background:#fff}
+@media(max-width:480px){.design-library-footer{flex-wrap:wrap}.design-library-footer .btn{width:100%}}
