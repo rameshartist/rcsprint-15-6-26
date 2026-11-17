@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS managed_pages (
+  page_key VARCHAR(80) PRIMARY KEY,
+  title VARCHAR(180) NOT NULL,
+  content_html MEDIUMTEXT NOT NULL,
+  updated_at DATETIME NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -68,7 +68,6 @@ include INCLUDE_PATH . '/partials/header.php';
             <?php foreach ($activeBusinessNeeds as $idx => $need):
               $name = trim((string)($need['name'] ?? 'Business Sector'));
               $slug = trim((string)($need['slug'] ?? ''));
-              $icon = trim((string)($need['icon'] ?? '🏢')) ?: '🏢';
               $img = trim((string)($need['image_path'] ?? '')) ?: '/assets/img/categories/print-category.svg';
               $productCount = (int)($need['product_count'] ?? 0);
               $theme = $sectorThemeClasses[$idx % count($sectorThemeClasses)];
@@ -78,9 +77,8 @@ include INCLUDE_PATH . '/partials/header.php';
                   <img src="<?= htmlspecialchars($img, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($name, ENT_QUOTES, 'UTF-8') ?>" loading="lazy" onerror="this.src='/assets/img/categories/print-category.svg'">
                 </div>
                 <div class="all-cat-body">
-                  <span class="all-cat-icon" aria-hidden="true"><?= htmlspecialchars($icon, ENT_QUOTES, 'UTF-8') ?></span>
                   <div><h2><?= htmlspecialchars($name, ENT_QUOTES, 'UTF-8') ?></h2><p><?= $productCount ?> product<?= $productCount === 1 ? '' : 's' ?></p></div>
-                  <span class="all-cat-arrow" aria-hidden="true">›</span>
+                  <span class="all-cat-btn">View Products</span>
                 </div>
               </a>
             <?php endforeach; ?>

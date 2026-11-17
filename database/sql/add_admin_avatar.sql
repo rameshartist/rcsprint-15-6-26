@@ -1,0 +1,2 @@
+ALTER TABLE admin_users
+  ADD COLUMN IF NOT EXISTS avatar_path VARCHAR(500) NULL;

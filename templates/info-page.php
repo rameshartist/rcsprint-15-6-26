@@ -133,63 +133,33 @@ $aboutReviews = is_array($aboutReviews ?? null) ? array_slice($aboutReviews, 0, 
     </div>
   </section>
 
-  <section class="about-testimonials-section">
-    <div class="about-showcase-container">
-      <div class="about-section-head about-section-head-compact">
-        <p class="about-kicker">What Our Customers Say</p>
-      </div>
-      <div class="about-testimonial-wrap">
-        <button class="about-slider-btn about-slider-prev" type="button" aria-label="Previous testimonial"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
-        <div class="about-testimonial-grid">
-          <?php if ($aboutReviews): ?>
-            <?php foreach ($aboutReviews as $review):
-              $rating = max(1, min(5, (int)($review['rating'] ?? 5)));
-              $productName = trim((string)($review['product_name'] ?? 'Verified Customer'));
-              $productSlug = trim((string)($review['product_slug'] ?? ''));
-              $productUrl = $productSlug !== '' ? '/product/' . rawurlencode($productSlug) : '/products';
-            ?>
-              <article>
-                <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                <p><?= htmlspecialchars((string)($review['comment'] ?? ''), ENT_QUOTES, 'UTF-8') ?></p>
-                <div class="about-stars" aria-label="<?= $rating ?> out of 5 stars">
-                  <?php for ($i = 1; $i <= 5; $i++): ?>
-                    <i class="fa-<?= $i <= $rating ? 'solid' : 'regular' ?> fa-star" aria-hidden="true"></i>
-                  <?php endfor; ?>
-                </div>
-                <div class="about-customer">
-                  <span><?= htmlspecialchars((string)($review['customer_initials'] ?? 'RC'), ENT_QUOTES, 'UTF-8') ?></span>
-                  <strong><?= htmlspecialchars((string)($review['customer_name'] ?? 'RCS Customer'), ENT_QUOTES, 'UTF-8') ?><small><a href="<?= htmlspecialchars($productUrl, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($productName, ENT_QUOTES, 'UTF-8') ?></a></small></strong>
-                </div>
-              </article>
-            <?php endforeach; ?>
-          <?php else: ?>
-            <article class="about-testimonial-empty"><i class="fa-solid fa-quote-left" aria-hidden="true"></i><p>Approved customer reviews will appear here once verified customers share their printing experience.</p><div class="about-stars" aria-label="0 out of 5 stars"><i class="fa-regular fa-star" aria-hidden="true"></i><i class="fa-regular fa-star" aria-hidden="true"></i><i class="fa-regular fa-star" aria-hidden="true"></i><i class="fa-regular fa-star" aria-hidden="true"></i><i class="fa-regular fa-star" aria-hidden="true"></i></div><div class="about-customer"><span>★</span><strong>No approved reviews yet<small>Verified customers only</small></strong></div></article>
+  <section class="customer-say-section about-testimonials-section" aria-labelledby="aboutCustomerSayTitle" data-reveal>
+    <div class="customer-say-container">
+      <h2 class="customer-say-title" id="aboutCustomerSayTitle">What Our <span>Customers</span> Say</h2>
+      <div class="customer-say-shell">
+        <button class="customer-slide-arrow customer-slide-prev" type="button" aria-label="Previous reviews" data-review-prev>‹</button>
+        <div class="customer-say-track" id="aboutCustomerSayTrack" role="list">
+          <?php if ($aboutReviews): foreach ($aboutReviews as $review): $customerCompany=trim((string)($review['customer_company']??''));$rating=max(1,min(5,(int)($review['rating']??5))); ?>
+            <article class="customer-card" role="listitem">
+              <span class="customer-card-quote" aria-hidden="true">”</span>
+              <p class="customer-text"><?= htmlspecialchars((string)($review['comment']??''),ENT_QUOTES,'UTF-8') ?></p>
+              <div class="customer-stars" aria-label="<?= $rating ?> out of 5 stars"><?php for($i=1;$i<=5;$i++):?><i class="fa-<?= $i<=$rating?'solid':'regular' ?> fa-star" aria-hidden="true"></i><?php endfor;?></div>
+              <div class="customer-profile"><span class="customer-initials" aria-hidden="true"><?php if(!empty($review['customer_avatar'])):?><img src="<?= htmlspecialchars((string)$review['customer_avatar'],ENT_QUOTES,'UTF-8') ?>" alt=""><?php else:?><?= htmlspecialchars((string)($review['customer_initials']??'RC'),ENT_QUOTES,'UTF-8') ?><?php endif;?></span><div><h3><?= htmlspecialchars((string)($review['customer_name']??'Customer'),ENT_QUOTES,'UTF-8') ?></h3><?php if($customerCompany!==''):?><span><?= htmlspecialchars($customerCompany,ENT_QUOTES,'UTF-8') ?></span><?php endif;?></div></div>
+            </article>
+          <?php endforeach; else: ?>
+            <article class="customer-card customer-card-empty" role="listitem"><p class="customer-text">Verified customer reviews will appear here after delivered orders are reviewed and approved.</p><div class="customer-stars" aria-label="0 out of 5 stars"><?php for($i=0;$i<5;$i++):?><i class="fa-regular fa-star" aria-hidden="true"></i><?php endfor;?></div><div class="customer-profile"><span class="customer-initials">RC</span><div><h3>No approved reviews yet</h3></div></div></article>
           <?php endif; ?>
         </div>
-        <button class="about-slider-btn about-slider-next" type="button" aria-label="Next testimonial"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+        <button class="customer-slide-arrow customer-slide-next" type="button" aria-label="Next reviews" data-review-next>›</button>
       </div>
-      <?php if (count($aboutReviews) > 1): ?><div class="about-slider-dots" aria-hidden="true"><span></span><span></span><span></span></div><?php endif; ?>
+      <div class="customer-dots" aria-hidden="true"><span class="customer-dot customer-dot-green"></span><span class="customer-dot customer-dot-active"></span><span class="customer-dot customer-dot-green"></span></div>
     </div>
   </section>
+  <script>
+  (()=>{const track=document.getElementById('aboutCustomerSayTrack');if(!track)return;const step=()=>{const card=track.querySelector('.customer-card'),gap=parseFloat(getComputedStyle(track).gap||'0');return card?card.getBoundingClientRect().width+gap:track.clientWidth};const move=direction=>track.scrollBy({left:direction*step(),behavior:'smooth'});track.closest('.customer-say-shell')?.querySelector('[data-review-prev]')?.addEventListener('click',()=>move(-1));track.closest('.customer-say-shell')?.querySelector('[data-review-next]')?.addEventListener('click',()=>move(1));if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;let timer=setInterval(()=>{const max=track.scrollWidth-track.clientWidth;track.scrollLeft>=max-8?track.scrollTo({left:0,behavior:'smooth'}):move(1)},3000);const stop=()=>{clearInterval(timer);timer=0},start=()=>{if(!timer)timer=setInterval(()=>{const max=track.scrollWidth-track.clientWidth;track.scrollLeft>=max-8?track.scrollTo({left:0,behavior:'smooth'}):move(1)},3000)};track.addEventListener('mouseenter',stop);track.addEventListener('mouseleave',start);})();
+  </script>
 
-  <section class="quick-help-section about-quick-help-section" aria-label="Quick help and bulk order actions">
-    <div class="quick-help-container">
-      <div class="quick-help-bar">
-        <a class="quick-help-item quick-help-call" href="tel:<?= $phoneHref ?>">
-          <span class="quick-help-icon"><i class="fa-solid fa-phone-volume" aria-hidden="true"></i></span>
-          <span class="quick-help-copy"><span>Need Help? Call Us</span><strong><?= $phone ?></strong></span>
-        </a>
-        <button class="quick-help-item quick-help-whatsapp" type="button" onclick="window.open('https://wa.me/<?= $wa ?>','_blank')">
-          <span class="quick-help-icon"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></span>
-          <span class="quick-help-copy"><strong>Chat with us on WhatsApp</strong><span>We are here to help!</span></span>
-        </button>
-        <a class="quick-help-item quick-help-download" href="/categories" aria-label="Download our brochure for all products">
-          <span class="quick-help-icon"><i class="fa-solid fa-download" aria-hidden="true"></i></span>
-          <span class="quick-help-copy"><strong>Download Our Brochure</strong><span>For All Products</span></span>
-        </a>
-      </div>
-    </div>
-  </section>
+  <?php $quickHelpExtraClass='about-quick-help-section'; include INCLUDE_PATH . '/partials/quick-help.php'; ?>
 </main>
 <?php include INCLUDE_PATH . '/partials/site-footer.php'; ?>
 <?php include INCLUDE_PATH . '/partials/footer.php'; ?>
@@ -208,10 +178,13 @@ $aboutReviews = is_array($aboutReviews ?? null) ? array_slice($aboutReviews, 0, 
     </div>
   </section>
 
-  <?php if (!empty($sections)): ?>
+  <?php if (!empty($page['managed_html']) || !empty($sections)): ?>
   <section class="info-simple-section">
     <div class="info-container info-simple-wrap">
       <article class="info-simple-document" aria-label="<?= $title ?> details">
+        <?php if (!empty($page['managed_html'])): ?>
+          <?= $page['managed_html'] ?>
+        <?php else: ?>
         <?php foreach ($sections as $idx => $section): ?>
           <section class="info-simple-block">
             <h2><span><?= str_pad((string)($idx + 1), 2, '0', STR_PAD_LEFT) ?></span><?= htmlspecialchars((string)($section['title'] ?? ''), ENT_QUOTES, 'UTF-8') ?></h2>
@@ -227,6 +200,7 @@ $aboutReviews = is_array($aboutReviews ?? null) ? array_slice($aboutReviews, 0, 
             <?php endif; ?>
           </section>
         <?php endforeach; ?>
+        <?php endif; ?>
       </article>
 
       <aside class="info-simple-help">

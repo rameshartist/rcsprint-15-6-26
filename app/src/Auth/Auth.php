@@ -29,12 +29,23 @@ class Auth
         }
 
         $identifier = trim($identifier);
+        $phoneDigits = preg_replace('/\D+/', '', $identifier);
+        $phoneCandidates = [$phoneDigits];
+        $nationalPhone = self::mobileLoginNumber($identifier);
+        if (strlen($nationalPhone) === 10) {
+            $phoneCandidates = [$nationalPhone, '91' . $nationalPhone, '0' . $nationalPhone];
+        }
+        // Restrict phone lookup to phone-shaped identifiers; email digits are not a phone.
+        $isPhone = preg_match('/^\+?[0-9\s().-]+$/', $identifier) === 1;
+        $phoneCandidates = $isPhone ? $phoneCandidates : ['', '', ''];
+        $phoneCandidates = array_pad($phoneCandidates, 3, $phoneCandidates[0]);
         $user = \Database::row(
-            "SELECT * FROM users WHERE (email = ? OR phone = ?) AND is_active = 1",
-            [$identifier, $identifier]
+            "SELECT * FROM users WHERE is_active = 1 AND (email = ? OR phone = ?
+             OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '') IN (?, ?, ?))",
+            [$identifier, $identifier, ...$phoneCandidates]
         );
 
-        if (!$user || !password_verify($password, $user['password'])) {
+        if (!$user || !self::verifyCustomerPassword($password, $user)) {
             $attempts = ($_SESSION['login_attempts'][$ip] ?? 0) + 1;
             $_SESSION['login_attempts'][$ip] = $attempts;
             if ($attempts >= 5) {
@@ -119,11 +130,8 @@ class Auth
 
     public static function getProfile(int $userId): ?array
     {
-        $base = \Database::row(
-            "SELECT id, name, email, phone, company, created_at
-             FROM users WHERE id = ?",
-            [$userId]
-        );
+        try { $base=\Database::row("SELECT id,name,email,phone,company,avatar_path,created_at FROM users WHERE id=?",[$userId]); }
+        catch (\Throwable) { $base=\Database::row("SELECT id,name,email,phone,company,created_at FROM users WHERE id=?",[$userId]); }
         if (!$base) return null;
 
         $profile = [
@@ -132,6 +140,7 @@ class Auth
             'email'      => (string)$base['email'],
             'phone'      => (string)$base['phone'],
             'company'    => (string)($base['company'] ?? ''),
+            'avatar_path'=> (string)($base['avatar_path'] ?? ''),
             'created_at' => (string)($base['created_at'] ?? ''),
             'billing'    => null,
             'shipping'   => null,
@@ -195,6 +204,10 @@ class Auth
         }
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return ['ok' => false, 'msg' => 'Please enter a valid email address.'];
+        }
+        $mobilePassword = preg_replace('/\D+/', '', $phone);
+        if (strlen($mobilePassword) < 6) {
+            return ['ok' => false, 'msg' => 'Please enter a valid mobile number.'];
         }
 
         $dup = \Database::row(
@@ -321,6 +334,10 @@ class Auth
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return ['ok' => false, 'msg' => 'Please enter a valid email address.'];
         }
+        $mobilePassword = preg_replace('/\D+/', '', $phone);
+        if (strlen($mobilePassword) < 6) {
+            return ['ok' => false, 'msg' => 'Please enter a valid mobile number.'];
+        }
 
         $existing = \Database::row(
             "SELECT id FROM users WHERE email = ? OR phone = ? LIMIT 1",
@@ -337,7 +354,7 @@ class Auth
                 $name,
                 $email,
                 $phone,
-                password_hash(bin2hex(random_bytes(16)), PASSWORD_BCRYPT, ['cost' => 10]),
+                password_hash($mobilePassword, PASSWORD_BCRYPT, ['cost' => 10]),
             ]
         );
         self::assignCustomerCode((int)$id, self::generateCustomerCode($name), $name);
@@ -414,6 +431,7 @@ class Auth
             'name'  => $admin['name'],
             'email' => $admin['email'],
             'role'  => $admin['role'],
+            'avatar_path' => (string)($admin['avatar_path'] ?? ''),
         ];
         session_regenerate_id(true);
 
@@ -486,6 +504,31 @@ class Auth
     //  HELPERS
     // ══════════════════════════════════════════════════════════
 
+    private static function mobileLoginNumber(string $phone): string
+    {
+        $digits = preg_replace('/\D+/', '', $phone);
+        if ((strlen($digits) === 12 && str_starts_with($digits, '91'))
+            || (strlen($digits) === 11 && str_starts_with($digits, '0'))) {
+            return substr($digits, -10);
+        }
+        return $digits;
+    }
+
+    private static function verifyCustomerPassword(string $password, array $user): bool
+    {
+        $hash = (string)$user['password'];
+        if (password_verify($password, $hash)) return true;
+
+        // Only normalize mobile defaults that the stored hash actually verifies.
+        // A customer-selected password never gains a phone-number fallback.
+        $phone = (string)($user['phone'] ?? '');
+        $digits = preg_replace('/\D+/', '', $phone);
+        $national = self::mobileLoginNumber($phone);
+        if (strlen($national) < 6 || !preg_match('/^\+?[0-9\s().-]+$/', $password)) return false;
+        if (!hash_equals($national, self::mobileLoginNumber($password))) return false;
+        return password_verify($digits, $hash) || password_verify($national, $hash);
+    }
+
     private static function publicUser(array $user): array
     {
         return [
@@ -494,6 +537,7 @@ class Auth
             'email'   => $user['email'],
             'phone'   => $user['phone'],
             'company' => $user['company'] ?? '',
+            'avatar_path' => $user['avatar_path'] ?? '',
         ];
     }
 

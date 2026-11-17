@@ -13,7 +13,7 @@ try {
 $defaults = [
     'order_confirmation' => ['title' => 'Send Order Confirmation', 'description' => 'Sent after a new order is received.', 'body' => "Hello {customer_name}, 👋
 
-Thank you for your order. We have received Order #{order_id}.
+Thank you for your order. We have received Order {order_id}.
 
 Order value: {order_total}
 Products:
@@ -29,7 +29,7 @@ Thank you,
 For any query, call or WhatsApp: {business_phone}"],
     'proof_ready' => ['title' => 'Send Proof Ready Message', 'description' => 'Sent when admin uploads a corrected/proof file for customer review.', 'body' => "Hello {customer_name}, 👋
 
-Your corrected design proof for Order #{order_id} is ready for review.
+Your corrected design proof for Order {order_id} is ready for review.
 
 Product:
 {products}
@@ -42,7 +42,7 @@ Thank you,
 For any query, call or WhatsApp: {business_phone}"],
     'design_approved' => ['title' => 'Send Design Approved Message', 'description' => 'Sent after design approval to explain printing/production next steps.', 'body' => "Hello {customer_name}, 👋
 
-Your design for Order #{order_id} has been approved.
+Your design for Order {order_id} has been approved.
 
 Product:
 {products}
@@ -94,7 +94,7 @@ Please share any artwork, size, quantity or reference details here so our team c
 
 Thank you,
 {business_name}"],
-    'custom_quote_sent' => ['title' => 'Send Custom Quote', 'description' => 'Sent after the quoted amount and quote note are saved.', 'body' => "Hello {customer_name}, 👋\n\nThank you for your custom quotation request {quote_id}.\n\nProduct: {product_name}\nSize: {size_dimension}\nMaterial: {material_type}\nQuantity: {quantity}\nQuoted Amount: {quoted_amount}\n\n{quote_note}\n\nPlease reply APPROVE to confirm this quote.\n\nThank you,\n{business_name}"],
+    'custom_quote_sent' => ['title' => 'Send Custom Quote', 'description' => 'Sent after the amount, design fee and quote note are saved.', 'body' => "Hello {customer_name}, 👋\n\nThank you for your custom quotation request {quote_id}.\n\nProduct: {product_name}\nSize: {size_dimension}\nMaterial: {material_type}\nQuantity: {quantity}\nAmount: {quoted_amount}\nDesign Fee: {design_fee}\nSubtotal before GST: {custom_subtotal}\n\n{quote_note}\n\nPlease reply APPROVE to confirm this quote.\n\nThank you,\n{business_name}"],
     'custom_quote_payment' => ['title' => 'Send Custom Order Payment Link', 'description' => 'Sent after approval, account linking and payment-link generation.', 'body' => "Hello {customer_name}, 👋\n\nYour custom order {quote_id} is ready for payment.\n\nAmount: {quoted_amount}\n\nLogin here: {login_url}\nLogin with: {login_identifier}\nPassword: {login_password}\n\nYour custom order is already added to your cart. Open your secure payment link to continue: {payment_link}\n\nThank you,\n{business_name}"],
 ];
 $labels = [
@@ -137,11 +137,14 @@ $placeholders = [
     'size_dimension' => 'Requested size / dimension',
     'material_type' => 'Requested material',
     'quoted_amount' => 'Final quoted amount',
+    'design_fee' => 'Custom-order design fee',
+    'custom_subtotal' => 'Amount plus design fee',
     'quote_note' => 'Admin quote note',
     'login_url' => 'Customer login URL',
     'login_identifier' => 'Customer login email / mobile',
     'login_password' => 'Customer login password',
     'payment_link' => 'Custom order payment link',
+    'custom_cart_url' => 'Custom order cart / checkout link',
 ];
 ?>
 <div class="wa-template-page">
@@ -202,12 +205,12 @@ $placeholders = [
 const WA_DEFAULTS = <?= json_encode($defaults, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const WA_SAMPLE = {
   customer_name: 'Rahul Customer', customer_phone: '919876543210', customer_email: 'customer@example.com',
-  order_id: 'RCS-1024', order_total: '₹2,450', order_status: 'Received',
+  order_id: 'RCS1024', order_total: '₹2,450', order_status: 'Received',
   products: '• Business Cards — 500 qty\n• Brochure — 100 qty', product_name: 'Business Cards', quantity: '500',
-  design_status: 'Approved', account_order_url: `${location.origin}/profile#orders-RCS-1024`, proof_url: `${location.origin}/profile#orders-RCS-1024`,
+  design_status: 'Approved', account_order_url: `${location.origin}/profile#orders-RCS1024`, proof_url: `${location.origin}/profile#orders-RCS1024`,
   business_name: 'RCS Print', business_phone: '+91 8980000024', business_whatsapp: '+91 8980000024',
   customer_code: 'PK0001', order_count: '3', last_product: 'Business Cards', suggestion: 'Letterhead + Envelope',
-  lead_name: 'Prakash Karena', lead_phone: '919876543210', lead_email: 'lead@example.com', lead_subject: 'Need brochure printing', lead_message: 'Please share quote for 500 brochures.', quote_id: 'CQ-0001', size_dimension: '500 × 400 mm', material_type: 'Standard', quoted_amount: '₹2,500.00', quote_note: 'Final price includes printing and finishing.', login_url: `${location.origin}/login?next=/cart`, login_identifier: 'customer@example.com', login_password: '9876543210', payment_link: `${location.origin}/custom-checkout/example`
+  lead_name: 'Prakash Karena', lead_phone: '919876543210', lead_email: 'lead@example.com', lead_subject: 'Need brochure printing', lead_message: 'Please share quote for 500 brochures.', quote_id: 'CQ0001', size_dimension: '500 × 400 mm', material_type: 'Standard', quoted_amount: '₹2,500.00', quote_note: 'Final price includes printing and finishing.', login_url: `${location.origin}/login?next=/cart`, login_identifier: 'customer@example.com', login_password: '9876543210', payment_link: `${location.origin}/custom-checkout/example`
 };
 function fillWaTemplate(body, data = WA_SAMPLE) {
   return String(body || '').replace(/\{([a-z0-9_]+)\}/gi, (_, key) => Object.prototype.hasOwnProperty.call(data, key) ? data[key] : `{${key}}`);

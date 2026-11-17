@@ -10,7 +10,7 @@ include INCLUDE_PATH . '/partials/header.php';
     </div>
     <div style="font-family:var(--fd);font-size:27px;font-weight:800;text-align:center;margin-bottom:7px">Thank you for your order! 🎉</div>
     <div style="font-size:15px;color:var(--text2);text-align:center;margin-bottom:16px;line-height:1.55">Your order has been received successfully. Our team will review the details and keep you updated from your account.</div>
-    <div class="confirm-oid">#<?= htmlspecialchars($order['order_id']) ?></div>
+    <div class="confirm-oid"><?= htmlspecialchars($order['order_id']) ?></div>
     <div class="confirm-rows">
       <?php foreach ($order['items'] as $item): ?>
       <div class="cr">
