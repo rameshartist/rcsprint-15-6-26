@@ -122,7 +122,7 @@ class Cart
         foreach($items as $item){
             if(empty($item['product_id']))continue;
             $cartItemId=(int)\Database::insert("INSERT INTO cart_items(cart_id,product_id,quality_id,quantity,attribute_selections,design_choice,design_brief,notes,price_breakdown,total_price,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,NOW())",[$cartId,(int)$item['product_id'],(int)($item['quality_id']??1),max(1,(int)$item['quantity']),(string)($item['attribute_selections']??'[]'),(string)($item['design_choice']??'upload'),(string)($item['design_brief']??''),(string)($item['notes']??''),(string)($item['price_breakdown']??'{}'),(float)($item['total_price']??0)]);
-            $files=\Database::rows("SELECT af.filename,af.original_name,af.file_path,af.mime_type,af.file_size FROM artwork_files af WHERE af.order_item_id=? AND af.uploaded_by=? AND NOT EXISTS (SELECT 1 FROM order_design_approvals oda WHERE oda.proof_file_id=af.id) ORDER BY af.id",[(int)$item['id'],$userId]);
+            $files=\Designs\ArtworkRevision::currentFiles((int)$item['id']);
             foreach($files as $file)\Database::insert("INSERT INTO artwork_files(uploaded_by,cart_item_id,filename,original_name,file_path,mime_type,file_size,created_at) VALUES(?,?,?,?,?,?,?,NOW())",[$userId,$cartItemId,$file['filename'],$file['original_name'],$file['file_path'],$file['mime_type'],$file['file_size']]);
             $added++;
         }

@@ -53,9 +53,12 @@ async function scenario(addresses, {guest = false, fail = false} = {}) {
     els['bill-same-ship'].checked=false; c.syncBillingFromShipping();
     assert.equal(els['billingFields'].hidden,false);
   }
-  const address={id:7,address_line1:'Saved Street',city:'Rajkot',state:'Gujarat',pincode:'360001',business_name:'Saved Customer'};
+  const address={id:7,address_line1:'Saved Street',city:'Rajkot',state:'Gujarat',pincode:'360001',business_name:'Saved Customer',legal_name:'RCS & Partners <Print>',gst_no:'24ABCDE1234F1Z5',address_line2:'Suite 2'};
   const {els,context:c}=await scenario([address]);
   assert.equal(els['saved-address-wrap'].hidden,false);
+  assert.ok(els.selectedAddressText.innerHTML.includes('RCS &amp; Partners &lt;Print&gt;'));
+  assert.ok(els.selectedAddressText.innerHTML.includes('Suite 2'));
+  assert.ok(els.selectedBillingAddressText.innerHTML.includes('RCS &amp; Partners &lt;Print&gt;'));
   assert.equal(els['saved-billing-address-wrap'].hidden,false);
   assert.equal(els['shippingAddressFields'].hidden,true);
   assert.equal(els['billingFields'].hidden,true);

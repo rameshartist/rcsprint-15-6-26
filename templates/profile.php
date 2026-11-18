@@ -262,7 +262,7 @@ $renderOrders = static function (array $list, bool $compact = false, bool $custo
                           </div>
                           <?php if ($approvalId > 0): ?>
                             <div class="account-artwork-reupload-form <?= $canUploadArtwork ? 'is-enabled' : '' ?>">
-                              <input type="file" name="artwork" accept=".pdf,.ai,.eps,.png,.jpg,.jpeg,.psd,.cdr,.svg,.tif,.tiff,.zip" onchange="uploadAccountArtworkRevision(this, <?= $approvalId ?>)" <?= $canUploadArtwork ? '' : 'disabled' ?>>
+                              <input type="file" name="artwork[]" multiple accept=".pdf,.ai,.eps,.png,.jpg,.jpeg,.psd,.cdr,.svg,.tif,.tiff,.zip" onchange="uploadAccountArtworkRevision(this, <?= $approvalId ?>)" <?= $canUploadArtwork ? '' : 'disabled' ?>>
                               <button type="button" onclick="chooseAccountArtworkRevision(this)" <?= $canUploadArtwork ? '' : 'disabled' ?>><?= $canInitialArtworkUpload ? 'Upload Design' : 'Reupload Design' ?></button>
                               <small><?= $canInitialArtworkUpload ? 'You selected upload later. Choose your design file here when ready.' : ($designStatus === 'issue_found' ? 'One click: choose file and upload starts automatically.' : 'Upload is available when a design file is required.') ?></small>
                             </div>
@@ -905,12 +905,15 @@ async function uploadAccountArtworkRevision(input, id) {
   if (!input || input.disabled) { alert('Upload is available when a design file is required.'); return; }
   if (!input.files.length) { alert('Please choose a design file to reupload.'); return; }
   rememberOpenAccountOrder(input);
-  const selectedFile = input.files[0];
+  const selectedFiles = Array.from(input.files);
+  if (selectedFiles.length > 20) { alert('Choose at most 20 files per upload.'); return; }
+  const selectedFile = selectedFiles[0];
   const card = getAccountOrderDetailFromElement(input)?.querySelector(`[data-design-approval-item="${id}"]`) || input.closest('[data-design-approval-item]');
   const tempPreviewUrl = selectedFile && String(selectedFile.type || '').toLowerCase().startsWith('image/') ? URL.createObjectURL(selectedFile) : '';
   setDesignArtworkUploadProgress(input, selectedFile, tempPreviewUrl);
   const fd = new FormData();
-  fd.append('artwork', selectedFile);
+  selectedFiles.forEach(file => fd.append('artwork[]', file));
+  fd.append('file_count', String(selectedFiles.length));
   const oldText = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
   try {
@@ -924,13 +927,15 @@ async function uploadAccountArtworkRevision(input, id) {
       input.value = '';
       return;
     }
-    if (data.file) {
-      updateDesignItemState(input, data.status || 'pending_review', data.msg || 'Design uploaded successfully.', data.file || null);
-    } else {
-      updateDesignArtworkPreview(card, { name: selectedFile.name, mime: selectedFile.type, path: tempPreviewUrl }, 'uploaded');
-      updateDesignItemState(input, data.status || 'pending_review', data.msg || 'Design uploaded successfully.', null);
+    updateDesignItemState(input, data.status || 'pending_review', data.msg || 'Design files uploaded successfully.', null);
+    const preview = card?.querySelector('[data-artwork-preview]');
+    if (preview && data.files) {
+      preview.innerHTML = '<div class="account-artwork-gallery">' + data.files.map(file => `<span class="account-artwork-gallery-item"><a href="${escapeAccountHtml(file.view_url)}" target="_blank" rel="noopener"><span>${String(file.mime || '').startsWith('image/') ? `<img src="${escapeAccountHtml(file.path)}" alt="">` : '📄'}</span><em>${escapeAccountHtml(file.name)}</em></a><a href="${escapeAccountHtml(file.download_url)}">Download</a></span>`).join('') + '</div>';
     }
-    if (tempPreviewUrl && data.file) URL.revokeObjectURL(tempPreviewUrl);
+    // The previous proof is no longer valid after a customer revision. Refresh the
+    // current order, preserving its expanded state, after showing the saved batch.
+    if (tempPreviewUrl) URL.revokeObjectURL(tempPreviewUrl);
+    setTimeout(() => location.reload(), 500);
     input.value = '';
   } catch (e) {
     const errorMsg = 'Could not reupload design right now.';

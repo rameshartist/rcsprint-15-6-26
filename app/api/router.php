@@ -173,83 +173,16 @@ if (preg_match('#^/api/design-approvals/(\d+)/artwork$#', $uri, $m) && $method =
     if (!$canInitialUpload && !$canIssueReupload) {
         json(['ok' => false, 'msg' => 'Upload is available only when a design file is required for this order.'], 422);
     }
-    if (empty($_FILES['artwork'])) json(['ok' => false, 'msg' => 'No file uploaded'], 400);
-
-    $file = $_FILES['artwork'];
-    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) json(['ok'=>false,'msg'=>'The upload did not complete. Please retry.'],400);
-    $maxMb = (int)Database::setting('upload_max_mb', env('UPLOAD_MAX_SIZE_MB', '50'));
-    $maxSize = $maxMb * 1024 * 1024;
-    $allowed = array_map('trim', explode(',', Database::setting('upload_allowed_ext', 'pdf,ai,eps,png,jpg,jpeg,psd,cdr')));
-    if ($file['size'] > $maxSize) json(['ok' => false, 'msg' => "File too large. Max {$maxMb}MB."], 400);
-    $ext = strtolower(pathinfo((string)$file['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, $allowed, true)) json(['ok' => false, 'msg' => "File type .{$ext} not allowed."], 400);
-
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mime = finfo_file($finfo, $file['tmp_name']);
-    finfo_close($finfo);
-    $safeMimes = [
-        'application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/svg+xml',
-        'image/tiff', 'application/zip', 'application/x-zip-compressed',
-        'application/postscript', 'application/illustrator',
-    ];
-    if (!in_array($mime, $safeMimes, true) && !str_starts_with((string)$mime, 'image/')) {
-        error_log("Unusual MIME type artwork reupload: {$mime} from user {$userId}");
+    \Auth\Auth::verifyCsrf();
+    try {
+        $result = \Designs\ArtworkRevision::upload($approvalId, $_FILES['artwork'] ?? [], false, $user, '', isset($_POST['file_count']) ? (int)$_POST['file_count'] : null);
+        json($result);
+    } catch (\InvalidArgumentException $e) {
+        json(['ok'=>false,'msg'=>$e->getMessage()], 422);
+    } catch (\Throwable $e) {
+        error_log('Artwork revision failed: '.$e->getMessage());
+        json(['ok'=>false,'msg'=>'Could not save the design files. Your previous design is unchanged.'], 500);
     }
-
-    $dir = UPLOAD_PATH . '/artwork/revisions/' . date('Y/m/');
-    if (!is_dir($dir)) mkdir($dir, 0755, true);
-    $filename = uniqid('rev_', true) . '.' . $ext;
-    $filepath = $dir . $filename;
-    $publicPath = '/uploads/artwork/revisions/' . date('Y/m/') . $filename;
-    if (!move_uploaded_file($file['tmp_name'], $filepath)) json(['ok' => false, 'msg' => 'Upload failed'], 500);
-
-    $fileId = Database::insert(
-        "INSERT INTO artwork_files (uploaded_by, order_item_id, filename, original_name, file_path, mime_type, file_size, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
-        [$userId, (int)$approval['order_item_id'], $filename, $file['name'], $publicPath, $mime, $file['size']]
-    );
-    Database::query(
-        "UPDATE order_design_approvals
-            SET status = 'pending_review',
-                customer_artwork_file_id = ?,
-                proof_file_id = NULL,
-                customer_note = ?,
-                approved_at = NULL,
-                updated_at = NOW()
-          WHERE id = ?",
-        [(int)$fileId, $canInitialUpload ? 'Customer uploaded artwork after selecting upload later.' : 'Customer reuploaded artwork.', $approvalId]
-    );
-    \Orders\OrderManager::recordDesignEvent([
-        'order_id' => (int)$approval['order_id'],
-        'order_item_id' => (int)$approval['order_item_id'],
-        'design_approval_id' => $approvalId,
-        'event_type' => $canInitialUpload ? 'customer_artwork_uploaded' : 'customer_artwork_reuploaded',
-        'actor_type' => 'customer',
-        'actor_id' => $userId,
-        'actor_name' => $user['name'] ?? null,
-        'status_before' => $approvalStatus,
-        'status_after' => 'pending_review',
-        'file_id' => (int)$fileId,
-        'file_role' => $canInitialUpload ? 'customer_artwork' : 'revision',
-        'note' => $canInitialUpload ? 'Customer uploaded artwork after selecting upload later.' : 'Customer reuploaded artwork.',
-    ]);
-    \Orders\OrderManager::markCustomerUpdate((int)$approval['order_id'], $canInitialUpload ? 'customer_artwork_uploaded' : 'customer_artwork_reuploaded');
-    \Orders\OrderManager::clearAdminUpdate((int)$approval['order_id']);
-    \Orders\OrderManager::syncOrderDesignApproved((int)$approval['order_id']);
-    json([
-        'ok' => true,
-        'msg' => $canInitialUpload ? 'Artwork uploaded for admin review.' : 'Artwork reuploaded for admin review.',
-        'status' => 'pending_review',
-        'artwork_id' => (int)$fileId,
-        'file' => [
-            'id' => (int)$fileId,
-            'name' => (string)$file['name'],
-            'path' => $publicPath,
-            'mime' => $mime,
-            'view_url' => '/account/artwork/' . (int)$fileId . '/view',
-            'download_url' => '/account/artwork/' . (int)$fileId . '/download',
-        ],
-    ]);
 }
 
 if ($uri === '/api/profile/order-updates' && $method === 'GET') {

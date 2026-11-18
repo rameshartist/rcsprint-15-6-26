@@ -2934,36 +2934,16 @@ if (str_starts_with($uri, '/admin/api/')) {
         json(['ok' => $ok]);
     }
     if (preg_match('#^/admin/api/design-approvals/(\d+)/proof$#', $uri, $m) && $method === 'POST') {
-        $approval = Database::row("SELECT * FROM order_design_approvals WHERE id = ?", [(int)$m[1]]);
-        if (!$approval) json(['ok' => false, 'msg' => 'Design approval not found'], 404);
-        if (empty($_FILES['proof'])) json(['ok' => false, 'msg' => 'No proof file uploaded'], 400);
-
-        $file = $_FILES['proof'];
-        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) json(['ok'=>false,'msg'=>'The proof upload did not complete. Please retry.'],400);
-        $maxMb = (int)Database::setting('upload_max_mb', env('UPLOAD_MAX_SIZE_MB', '50'));
-        if ($file['size'] > ($maxMb * 1024 * 1024)) json(['ok' => false, 'msg' => "File too large. Max {$maxMb}MB."], 400);
-        $allowed = explode(',', Database::setting('upload_allowed_ext', 'pdf,ai,eps,png,jpg,jpeg,psd,cdr,svg,tif,tiff,zip'));
-        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        if (!in_array($ext, $allowed, true)) json(['ok' => false, 'msg' => "File type .{$ext} not allowed."], 400);
-
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-        $mime = finfo_file($finfo, $file['tmp_name']);
-        finfo_close($finfo);
-        $dir = UPLOAD_PATH . '/artwork/proofs/' . date('Y/m/');
-        if (!is_dir($dir)) mkdir($dir, 0755, true);
-        $filename = uniqid('proof_', true) . '.' . $ext;
-        $filepath = $dir . $filename;
-        $publicPath = '/uploads/artwork/proofs/' . date('Y/m/') . $filename;
-        if (!move_uploaded_file($file['tmp_name'], $filepath)) json(['ok' => false, 'msg' => 'Upload failed'], 500);
-
-        $adminId = (int)($admin['id'] ?? 0);
-        $fileId = Database::insert(
-            "INSERT INTO artwork_files (uploaded_by, order_item_id, filename, original_name, file_path, mime_type, file_size, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
-            [$adminId ?: 0, (int)$approval['order_item_id'], $filename, $file['name'], $publicPath, $mime, $file['size']]
-        );
-        \Orders\OrderManager::updateDesignApproval((int)$m[1], 'proof_uploaded', trim((string)($_POST['admin_note'] ?? '')), (int)$fileId);
-        json(['ok' => true, 'file_id' => (int)$fileId]);
+        \Auth\Auth::verifyCsrf();
+        try {
+            $result = \Designs\ArtworkRevision::upload((int)$m[1], $_FILES['proof'] ?? [], true, \Auth\Auth::admin(), trim((string)($_POST['admin_note'] ?? '')), isset($_POST['file_count']) ? (int)$_POST['file_count'] : null);
+            json($result);
+        } catch (\InvalidArgumentException $e) {
+            json(['ok'=>false,'msg'=>$e->getMessage()], 422);
+        } catch (\Throwable $e) {
+            error_log('Proof revision failed: '.$e->getMessage());
+            json(['ok'=>false,'msg'=>'Could not save all proof files. Your previous proof is unchanged.'], 500);
+        }
     }
     if ($uri === '/admin/api/sheets/retry' && $method === 'POST') {
         $failed = Database::rows("SELECT * FROM sheets_sync_log WHERE resolved=0 LIMIT 20");
@@ -3304,8 +3284,8 @@ if ($uri === '/admin/orders') {
         foreach ($o['items'] as &$item) {
             $item['attribute_selections'] = json_decode((string)($item['attribute_selections'] ?? '[]'), true) ?: [];
             $item['price_breakdown'] = json_decode((string)($item['price_breakdown'] ?? '{}'), true) ?: [];
-            $item['artwork_files'] = Database::rows("SELECT af.id,af.original_name,af.filename,af.file_path,af.mime_type,af.file_size FROM artwork_files af WHERE af.order_item_id=? AND af.file_path NOT LIKE '/uploads/artwork/proofs/%' AND NOT EXISTS (SELECT 1 FROM order_design_approvals oda WHERE oda.proof_file_id=af.id) ORDER BY af.id",[(int)$item['id']]);
-            $item['proof_files'] = Database::rows("SELECT af.id,af.original_name,af.filename,af.file_path,af.mime_type,af.file_size FROM artwork_files af WHERE af.order_item_id=? AND af.file_path LIKE '/uploads/artwork/proofs/%' ORDER BY af.id", [(int)$item['id']]);
+            $item['artwork_files'] = \Designs\ArtworkRevision::currentFiles((int)$item['id']);
+            $item['proof_files'] = \Designs\ArtworkRevision::currentFiles((int)$item['id'], true);
             if (empty($item['design_approval_id']) && ($item['item_type'] ?? 'product') === 'product') {
                 $customerArtwork = Database::row(
                     "SELECT af.id FROM artwork_files af

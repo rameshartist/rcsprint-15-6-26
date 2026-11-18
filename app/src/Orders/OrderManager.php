@@ -618,7 +618,7 @@ class OrderManager
         ]);
     }
 
-    public static function updateDesignApproval(int $approvalId, string $status, string $adminNote = '', ?int $proofFileId = null): bool
+    public static function updateDesignApproval(int $approvalId, string $status, string $adminNote = '', ?int $proofFileId = null, bool $recordEvent = true): bool
     {
         if (!self::ensureDesignApprovalSchema()) return false;
         $valid = ['pending_review', 'issue_found', 'proof_uploaded', 'revision_requested', 'approved'];
@@ -658,6 +658,7 @@ class OrderManager
             $eventFileId = !empty($approval['proof_file_id']) ? (int)$approval['proof_file_id'] : (!empty($approval['customer_artwork_file_id']) ? (int)$approval['customer_artwork_file_id'] : null);
             $eventFileRole = !empty($approval['proof_file_id']) ? 'admin_proof' : (!empty($approval['customer_artwork_file_id']) ? 'customer_artwork' : null);
         }
+        if ($recordEvent) {
         self::recordDesignEvent([
             'order_id' => (int)$approval['order_id'],
             'order_item_id' => (int)$approval['order_item_id'],
@@ -672,6 +673,7 @@ class OrderManager
             'file_role' => $eventFileRole,
             'note' => $adminNote,
         ]);
+        }
         if ($admin) {
             self::clearCustomerUpdate((int)$approval['order_id']);
             if (in_array($status, ['issue_found', 'proof_uploaded', 'approved'], true)) {
@@ -834,8 +836,8 @@ class OrderManager
         foreach ($order['items'] as &$item) {
             $item['attribute_selections'] = json_decode($item['attribute_selections'] ?? '[]', true);
             $item['price_breakdown'] = json_decode($item['price_breakdown'] ?? '{}', true);
-            $item['artwork_files'] = \Database::rows("SELECT af.id,af.original_name,af.filename,af.file_path,af.mime_type,af.file_size FROM artwork_files af WHERE af.order_item_id=? AND af.file_path NOT LIKE '/uploads/artwork/proofs/%' AND NOT EXISTS (SELECT 1 FROM order_design_approvals oda WHERE oda.proof_file_id=af.id) ORDER BY af.id",[(int)$item['id']]);
-            $item['proof_files'] = \Database::rows("SELECT af.id,af.original_name,af.filename,af.file_path,af.mime_type,af.file_size FROM artwork_files af WHERE af.order_item_id=? AND af.file_path LIKE '/uploads/artwork/proofs/%' ORDER BY af.id", [(int)$item['id']]);
+            $item['artwork_files'] = \Designs\ArtworkRevision::currentFiles((int)$item['id']);
+            $item['proof_files'] = \Designs\ArtworkRevision::currentFiles((int)$item['id'], true);
         }
 
         $order['status_history'] = \Database::rows(
@@ -893,7 +895,7 @@ class OrderManager
                  WHERE oi.order_id = ?",
                 [$order['id']]
             );
-            foreach($order['items'] as &$item){$item['attribute_selections']=json_decode($item['attribute_selections']??'[]',true)?:[];$item['price_breakdown']=json_decode($item['price_breakdown']??'{}',true)?:[];$item['artwork_files']=\Database::rows("SELECT af.id,af.original_name,af.filename,af.file_path,af.mime_type,af.file_size FROM artwork_files af WHERE af.order_item_id=? AND af.file_path NOT LIKE '/uploads/artwork/proofs/%' AND NOT EXISTS (SELECT 1 FROM order_design_approvals oda WHERE oda.proof_file_id=af.id) ORDER BY af.id",[(int)$item['id']]);$item['proof_files']=\Database::rows("SELECT af.id,af.original_name,af.filename,af.file_path,af.mime_type,af.file_size FROM artwork_files af WHERE af.order_item_id=? AND af.file_path LIKE '/uploads/artwork/proofs/%' ORDER BY af.id",[(int)$item['id']]);}unset($item);
+            foreach($order['items'] as &$item){$item['attribute_selections']=json_decode($item['attribute_selections']??'[]',true)?:[];$item['price_breakdown']=json_decode($item['price_breakdown']??'{}',true)?:[];$item['artwork_files']=\Designs\ArtworkRevision::currentFiles((int)$item['id']);$item['proof_files']=\Designs\ArtworkRevision::currentFiles((int)$item['id'], true);}unset($item);
         }
         return $orders;
     }

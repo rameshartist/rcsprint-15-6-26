@@ -14757,7 +14757,7 @@ body.portfolio-lightbox-open { overflow:hidden; }
 
 /* Compact checkout address forms, matching the saved-address fields. */
 .checkout-showcase-container{max-width:1280px}
-.checkout-address-form{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px 12px!important}
+.checkout-address-form{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 12px!important}
 .checkout-address-form label{font-size:12px;gap:4px}
 .checkout-address-form .checkout-input{min-height:35px!important;padding:7px 10px;font-size:13px;border-radius:7px}
 .checkout-address-form textarea.checkout-input{min-height:58px!important;resize:vertical}

@@ -122,7 +122,7 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
       $active = $isCardActive($card);
       $showAttentionButton = in_array($card['key'], ['received', 'design_approved'], true);
     ?>
-    <article class="adm-order-status-card adm-order-status-card--<?= htmlspecialchars($card['class']) ?> <?= $active ? 'act' : '' ?>">
+    <article data-status-summary="<?= htmlspecialchars($card['params']['status'] ?? $card['key']) ?>" class="adm-order-status-card adm-order-status-card--<?= htmlspecialchars($card['class']) ?> <?= $active ? 'act' : '' ?>">
       <a class="adm-order-status-main" href="<?= htmlspecialchars($href) ?>" aria-label="Show all <?= htmlspecialchars($card['label']) ?> orders">
         <span class="adm-order-status-icon"><?= htmlspecialchars($card['icon']) ?></span>
         <span class="adm-order-status-copy"><b><?= number_format((int)$card['count']) ?></b><strong><?= htmlspecialchars($card['label']) ?></strong></span>
@@ -326,15 +326,15 @@ $isCardActive = static function (array $card) use ($status, $seen, $attention): 
             ?>
             <?php if (($o['order_source'] ?? 'customer') === 'admin' && ($o['payment_status'] ?? '') !== 'paid'): $adminPayPhone=preg_replace('/\D+/','',(string)($o['customer_phone']??''));$adminPayMessage='Hello '.(string)($o['customer_name']??'Customer').', your order '.(string)($o['order_id']??'').' has been added by RCS Graphic. Please login at '.$publicBase.'/login and open My Orders to complete the pending payment.'; ?><a class="aoc-btn aoc-btn--approve-wa" target="_blank" rel="noopener" href="https://wa.me/<?= htmlspecialchars($adminPayPhone) ?>?text=<?= rawurlencode($adminPayMessage) ?>"><span class="aoc-ico"><?= $adminWhatsAppIcon ?></span><span>Send Payment Link</span></a><?php endif; ?>
             <button class="aoc-btn aoc-btn--confirm" type="button" onclick='waOrderConfirmation(<?= json_encode((string)($o['customer_name'] ?? 'Customer'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode((string)($o['customer_phone'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($orderConfirmId, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($orderConfirmTotal, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($orderConfirmProducts, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($orderConfirmProfileUrl, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)'><span class="aoc-ico"><?= $adminWhatsAppIcon ?></span><span>Order Confirmation</span></button>
-            <a href="tel:<?= htmlspecialchars(preg_replace('/\D+/', '', $o['customer_phone'] ?? '')) ?>" class="aoc-btn aoc-btn--call"><span class="aoc-ico"><i class="fa-solid fa-phone"></i></span><span>Call</span></a>
+            <a href="tel:<?= htmlspecialchars(preg_replace('/\D+/', '', $o['customer_phone'] ?? '')) ?>" class="aoc-btn aoc-btn--call"><span class="aoc-ico"><svg class="ord-action-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h4l2 5-3 2a15 15 0 0 0 6 6l2-3 5 2v4a2 2 0 0 1-2 2C10 21 3 14 3 5a2 2 0 0 1 2-2Z"/></svg></span><span>Call</span></a>
             <button class="aoc-btn aoc-btn--wa" type="button" onclick="waCustomer('<?= htmlspecialchars(addslashes($o['customer_name'])) ?>','<?= htmlspecialchars($o['customer_phone']) ?>','<?= htmlspecialchars($o['order_id']) ?>','<?= htmlspecialchars($orderStatus) ?>')"><span class="aoc-ico"><?= $adminWhatsAppIcon ?></span><span>WhatsApp</span></button>
-            <?php if (!empty($o['invoice_file_path'])): ?><a href="/admin/invoice/<?= htmlspecialchars($o['order_id']) ?>" class="aoc-btn aoc-btn--invoice" target="_blank"><span class="aoc-ico"><i class="fa-regular fa-file-lines"></i></span><span>View Invoice</span></a><?php endif; ?>
+            <?php if (!empty($o['invoice_file_path'])): ?><a href="/admin/invoice/<?= htmlspecialchars($o['order_id']) ?>" class="aoc-btn aoc-btn--invoice" target="_blank"><span class="aoc-ico"><svg class="ord-action-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6Z"/><path d="M14 3v5h4M9 12h6M9 16h6"/></svg></span><span>View Invoice</span></a><?php endif; ?>
             <form class="ord-invoice-quick-form" method="post" action="/admin/orders/<?= (int)$o['id'] ?>/invoice" enctype="multipart/form-data" onsubmit="rememberCardForControl(this)">
               <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf ?? '') ?>">
               <input type="file" id="invoice_pdf_<?= (int)$o['id'] ?>" name="invoice_pdf" accept="application/pdf,.pdf" required onchange="autoUploadInvoice(this)">
-              <button class="aoc-btn aoc-btn--invoice-upload" type="button" onclick="chooseInvoicePdf(<?= (int)$o['id'] ?>)"><span class="aoc-ico"><i class="fa-solid fa-file-arrow-up"></i></span><span><?= !empty($o['invoice_file_path']) ? 'Replace Invoice' : 'Upload Invoice' ?></span></button>
+              <button class="aoc-btn aoc-btn--invoice-upload" type="button" onclick="chooseInvoicePdf(<?= (int)$o['id'] ?>)"><span class="aoc-ico"><svg class="ord-action-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6Z"/><path d="M14 3v5h4M12 18v-7m-3 3 3-3 3 3"/></svg></span><span><?= !empty($o['invoice_file_path']) ? 'Replace Invoice' : 'Upload Invoice' ?></span></button>
             </form>
-            <button class="aoc-btn aoc-btn--address" type="button" onclick='openAddrModal("<?= htmlspecialchars($o['order_id']) ?>", <?= json_encode($orderShipping, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>, <?= json_encode($orderBilling, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>)'><span class="aoc-ico"><i class="fa-solid fa-location-dot"></i></span><span>Address</span></button>
+            <button class="aoc-btn aoc-btn--address" type="button" onclick='openAddrModal("<?= htmlspecialchars($o['order_id']) ?>", <?= json_encode($orderShipping, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>, <?= json_encode($orderBilling, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>)'><span class="aoc-ico"><svg class="ord-action-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2"/></svg></span><span>Address</span></button>
           </div>
         </section>
       </div>
@@ -386,6 +386,16 @@ function saveOpenOrderCard(card, open) {
   else ids.delete(card.id);
   sessionStorage.setItem(ADM_OPEN_ORDER_KEY, JSON.stringify([...ids]));
 }
+function highlightOrderStatus(card) {
+  const aliases = {processing:'other_process'};
+  const status = aliases[card?.dataset.orderStatus] || card?.dataset.orderStatus;
+  if (!status) return;
+  document.querySelectorAll('[data-status-summary]').forEach(summary => {
+    const active = summary.dataset.statusSummary === status;
+    summary.classList.toggle('act', active);
+    summary.querySelector('.adm-order-status-main')?.setAttribute('aria-current', active ? 'true' : 'false');
+  });
+}
 function setOrderCardOpen(card, open, persist = true) {
   const body = card?.querySelector('.adm-order-card-body');
   if (!card || !body) return;
@@ -394,6 +404,7 @@ function setOrderCardOpen(card, open, persist = true) {
   card.querySelectorAll('[data-order-toggle]').forEach((toggle) => {
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
+  if (open) highlightOrderStatus(card);
   if (persist) saveOpenOrderCard(card, open);
 }
 function rememberCardForControl(control) {
@@ -500,16 +511,16 @@ async function uploadDesignProof(id) {
   const note = await adminPrompt('Optional proof note for customer/admin', 'Proof uploaded for review.', {title:'Upload Design Proof',confirmText:'Continue Upload'}); if(note===null)return;
   const files = Array.from(input.files);
   const trigger=input.closest('.ord-workflow-tile')?.querySelector('button'); const oldText=trigger?.textContent||'Upload Proof'; if(trigger) trigger.disabled=true;
-  for (let index=0; index<files.length; index++) {
-    const fd=new FormData(); fd.append('proof',files[index]); fd.append('admin_note',note);
-    if(trigger) trigger.textContent=`Uploading ${index+1}/${files.length}`;
-    const {ok,data}=await new Promise(resolve=>{const xhr=new XMLHttpRequest();xhr.open('POST',`/admin/api/design-approvals/${id}/proof`);xhr.setRequestHeader('X-CSRF-TOKEN','<?= htmlspecialchars($csrf ?? '') ?>');xhr.onerror=()=>resolve({ok:false,data:{msg:'Network upload failed'}});xhr.onload=()=>{let payload={};try{payload=JSON.parse(xhr.responseText||'{}')}catch(e){}resolve({ok:xhr.status>=200&&xhr.status<300,data:payload});};xhr.send(fd);});
-    if(!ok||!data.ok){toast(data.msg||`Could not upload ${files[index].name}`,'error');if(trigger){trigger.disabled=false;trigger.textContent=oldText;}return;}
-  }
+  if (files.length > 20) { toast('Choose at most 20 files per upload', 'error'); if(trigger)trigger.disabled=false; return; }
+  const fd=new FormData(); files.forEach(file=>fd.append('proof[]',file)); fd.append('admin_note',note); fd.append('file_count',String(files.length));
+  if(trigger)trigger.textContent=`Uploading ${files.length} file(s)…`;
+  const {ok,data}=await new Promise(resolve=>{const xhr=new XMLHttpRequest();xhr.open('POST',`/admin/api/design-approvals/${id}/proof`);xhr.setRequestHeader('X-CSRF-TOKEN','<?= htmlspecialchars($csrf ?? '') ?>');xhr.onerror=()=>resolve({ok:false,data:{msg:'Network upload failed'}});xhr.onload=()=>{let payload={};try{payload=JSON.parse(xhr.responseText||'{}')}catch(e){}resolve({ok:xhr.status>=200&&xhr.status<300,data:payload});};xhr.send(fd);});
+  if(!ok||!data.ok){toast(data.msg||'Could not upload proof files','error');if(trigger){trigger.disabled=false;trigger.textContent=oldText;}return;}
   toast(`${files.length} proof file${files.length===1?'':'s'} uploaded`,'success'); rememberCardForControl(input); setTimeout(()=>location.reload(),350);
 }
 
-document.addEventListener('DOMContentLoaded', restoreOpenOrderCards);
+document.addEventListener('DOMContentLoaded', () => { restoreOpenOrderCards(); const target=document.getElementById(location.hash.slice(1)); if(target?.matches('[data-order-card]')){setOrderCardOpen(target,true,false);reviewOpenedOrder(target);} });
+window.addEventListener('hashchange',()=>{const target=document.getElementById(location.hash.slice(1));if(target?.matches('[data-order-card]')){setOrderCardOpen(target,true,false);reviewOpenedOrder(target);target.scrollIntoView({block:'start'});}});
 
 async function saveShipping(id) {
   const payload = {
@@ -672,12 +683,12 @@ function closeAddrModal() {
 })();
 
 
-const linkedAdminOrder=location.hash.match(/^#ord-(\d+)$/);if(linkedAdminOrder){const linkedCard=document.getElementById(`ord-${linkedAdminOrder[1]}`);if(linkedCard){setOrderCardOpen(linkedCard,true,false);setTimeout(()=>linkedCard.scrollIntoView({block:'start'}),80);}}
+const linkedAdminOrder=location.hash.match(/^#ord-(\d+)$/);if(linkedAdminOrder){const linkedCard=document.getElementById(`ord-${linkedAdminOrder[1]}`);if(linkedCard){setOrderCardOpen(linkedCard,true,false);reviewOpenedOrder(linkedCard);setTimeout(()=>linkedCard.scrollIntoView({block:'start'}),80);}}
 window.addEventListener('admin:live-updates',event=>{
   const labels={new_order:'New Order',received:'Received',design_approved:'Design Approved',printing:'Printing',other_process:'Other Process',processing:'Other Process',ready:'Dispatched',delivered:'Delivered',cancelled:'Cancelled',whatsapp_pending:'WA Pending'};
   const colors={new_order:'b-blue',received:'b-blue',design_approved:'b-green',printing:'b-orange',other_process:'b-amber',processing:'b-amber',ready:'b-green',delivered:'b-ink',cancelled:'b-red',whatsapp_pending:'b-amber'};
   const updates={customer_design_approved:'Design Approved by Customer',customer_revision_requested:'Revision Requested',customer_artwork_uploaded:'Customer Artwork Uploaded',customer_artwork_reuploaded:'Artwork Reuploaded',customer_cancelled:'Cancelled by Customer',customer_refund_requested:'Refund Requested'};
-  (event.detail.orderChanges||[]).forEach(change=>{const card=document.getElementById(`ord-${Number(change.id)}`);if(!card)return;const old=card.dataset.orderStatus||'';card.classList.remove(`adm-order-card--${old}`,'adm-order-card--new');card.dataset.orderStatus=change.status;card.classList.add(`adm-order-card--${change.status}`);if(change.status==='new_order')card.classList.add('adm-order-card--new');const badge=card.querySelector('[data-order-status-badge]');if(badge){badge.textContent=labels[change.status]||change.status;badge.className=`badge ${colors[change.status]||'b-blue'}`;badge.dataset.orderStatusBadge='';}const select=card.querySelector('[id^=ord_status_]');if(select)select.value=change.status;const hasUpdate=Number(change.customer_update_pending)===1;card.classList.toggle('adm-order-card--customer-update',hasUpdate);let updateBadge=card.querySelector('.adm-order-customer-update-badge');if(hasUpdate&&!updateBadge){updateBadge=document.createElement('span');updateBadge.className='badge b-red adm-order-customer-update-badge';card.querySelector('.adm-order-card-badges')?.appendChild(updateBadge);}if(updateBadge){updateBadge.textContent=updates[change.customer_update_type]||'Customer Update';updateBadge.hidden=!hasUpdate;}});
+  (event.detail.orderChanges||[]).forEach(change=>{const card=document.getElementById(`ord-${Number(change.id)}`);if(!card)return;const old=card.dataset.orderStatus||'';card.classList.remove(`adm-order-card--${old}`,'adm-order-card--new');card.dataset.orderStatus=change.status;card.classList.add(`adm-order-card--${change.status}`);if(change.status==='new_order')card.classList.add('adm-order-card--new');const badge=card.querySelector('[data-order-status-badge]');if(badge){badge.textContent=labels[change.status]||change.status;badge.className=`badge ${colors[change.status]||'b-blue'}`;badge.dataset.orderStatusBadge='';}const select=card.querySelector('[id^=ord_status_]');if(select)select.value=change.status;const hasUpdate=Number(change.customer_update_pending)===1;card.classList.toggle('adm-order-card--customer-update',hasUpdate);let updateBadge=card.querySelector('.adm-order-customer-update-badge');if(hasUpdate&&!updateBadge){updateBadge=document.createElement('span');updateBadge.className='badge b-red adm-order-customer-update-badge';card.querySelector('.adm-order-card-badges')?.appendChild(updateBadge);}if(updateBadge){updateBadge.textContent=updates[change.customer_update_type]||'Customer Update';updateBadge.hidden=!hasUpdate;}if(card.classList.contains('open'))highlightOrderStatus(card);});
 });
 </script>
 </body></html>

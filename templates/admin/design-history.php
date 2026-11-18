@@ -44,13 +44,13 @@ $matchedEvents = [];
 $events = [];
 $eventTypes = [];
 try {
-    $matchedEvents = Database::rows("$eventSelect $whereSql ORDER BY e.created_at DESC LIMIT 250", $params);
+    $matchedEvents = Database::rows("$eventSelect $whereSql ORDER BY e.created_at DESC, e.id DESC LIMIT 250", $params);
     $events = $matchedEvents;
     if ($filtersActive && $matchedEvents) {
         $matchingOrderIds = array_values(array_unique(array_filter(array_map(static fn($event) => (int)($event['order_id'] ?? 0), $matchedEvents))));
         if ($matchingOrderIds) {
             $placeholders = implode(',', array_fill(0, count($matchingOrderIds), '?'));
-            $events = Database::rows("$eventSelect WHERE e.order_id IN ($placeholders) ORDER BY e.created_at DESC LIMIT 600", $matchingOrderIds);
+            $events = Database::rows("$eventSelect WHERE e.order_id IN ($placeholders) ORDER BY e.created_at DESC, e.id DESC LIMIT 600", $matchingOrderIds);
         }
     }
     $eventTypes = Database::rows("SELECT event_type, COUNT(*) AS count FROM order_design_events GROUP BY event_type ORDER BY event_type ASC");
@@ -58,6 +58,7 @@ try {
     error_log('Design history page failed: ' . $e->getMessage());
 }
 $eventLabels = [
+    'design_file_superseded' => 'Previous Revision (Archived)',
     'order_placed' => 'New Order Placed',
     'design_approval_created' => 'Workflow Started',
     'design_approval_synced' => 'Workflow Synced',

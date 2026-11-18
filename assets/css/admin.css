@@ -262,11 +262,19 @@ body.admin-page-orders .adm-orders-status-grid { display:grid; grid-template-col
 body.admin-page-orders .adm-order-status-card { min-height:112px; display:grid; grid-template-columns:54px minmax(0,1fr); align-items:center; gap:14px; position:relative; padding:16px; border:1px solid var(--adm-line); border-radius:14px; background:#fff; color:var(--adm-ink); text-decoration:none; box-shadow:0 8px 20px rgba(15,23,42,.045); transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
 body.admin-page-orders .adm-order-status-card:hover { transform:translateY(-2px); border-color:#cbd5e1; box-shadow:0 14px 30px rgba(15,23,42,.09); }
 body.admin-page-orders .adm-order-status-card.act { border-color:#93c5fd; box-shadow:0 14px 34px rgba(37,99,235,.14); }
-body.admin-page-orders .adm-order-status-card.act::before { content:''; position:absolute; inset:0 auto 0 0; width:4px; border-radius:14px 0 0 14px; background:var(--adm-blue); }
+body.admin-page-orders .adm-order-status-card.act::before { content:''; position:absolute; inset:0 auto 0 0; width:4px; border-radius:14px 0 0 14px; background:var(--order-status-accent,var(--adm-blue)); }
 body.admin-page-orders .adm-order-status-icon { width:54px; height:54px; display:flex; align-items:center; justify-content:center; border-radius:13px; font-size:25px; font-weight:700; }
 body.admin-page-orders .adm-order-status-copy b { display:block; color:var(--adm-ink); font-size:27px; line-height:1; font-weight:700; letter-spacing:-.04em; }
 body.admin-page-orders .adm-order-status-copy strong { display:block; margin-top:8px; color:#334155; font-size:13px; line-height:1.2; font-weight:700; }
 body.admin-page-orders .adm-order-status-card em { position:absolute; right:14px; bottom:12px; color:#64748b; font-size:11px; font-style:normal; font-weight:700; }
+body.admin-page-orders .adm-order-status-card--blue{--order-status-accent:#2563eb}
+body.admin-page-orders .adm-order-status-card--pink{--order-status-accent:#db2777}
+body.admin-page-orders .adm-order-status-card--cyan{--order-status-accent:#0891b2}
+body.admin-page-orders .adm-order-status-card--green{--order-status-accent:#16a34a}
+body.admin-page-orders .adm-order-status-card--purple{--order-status-accent:#9333ea}
+body.admin-page-orders .adm-order-status-card--amber{--order-status-accent:#f97316}
+body.admin-page-orders .adm-order-status-card--lime{--order-status-accent:#65a30d}
+body.admin-page-orders .adm-order-status-card--slate{--order-status-accent:#475569}
 body.admin-page-orders .adm-order-status-card--blue .adm-order-status-icon { background:#dbeafe; color:#2563eb; }
 body.admin-page-orders .adm-order-status-card--pink .adm-order-status-icon { background:#fce7f3; color:#db2777; }
 body.admin-page-orders .adm-order-status-card--cyan .adm-order-status-icon { background:#cffafe; color:#0891b2; }
@@ -1318,10 +1326,6 @@ body.admin-page-orders .ord-actions--compact{display:grid;grid-template-columns:
 body.admin-page-orders .ord-actions--compact .aoc-btn{min-width:0;min-height:58px;padding:8px 9px;gap:7px;font-size:11px;white-space:nowrap}
 body.admin-page-orders .ord-actions--compact .aoc-ico{font-size:22px;line-height:1}
 body.admin-page-orders .ord-actions--compact .aoc-ico svg{width:24px;height:24px;fill:currentColor}
-body.admin-page-orders .ord-actions--compact .aoc-btn--confirm,body.admin-page-orders .ord-actions--compact .aoc-btn--wa{color:#07834a!important}
-body.admin-page-orders .ord-actions--compact .aoc-btn--call{color:#1664d9!important}
-body.admin-page-orders .ord-actions--compact .aoc-btn--invoice,body.admin-page-orders .ord-actions--compact .aoc-btn--invoice-upload{color:#6323d1!important}
-body.admin-page-orders .ord-actions--compact .aoc-btn--address{color:#e54818!important}
 @media(max-width:1450px){body.admin-page-orders .adm-order-action-strip{grid-template-columns:210px minmax(0,1fr)}body.admin-page-orders .ord-actions--compact .aoc-btn{padding-inline:6px;font-size:10px}}
 @media(max-width:1150px){body.admin-page-orders .ord-design-head{grid-template-columns:minmax(300px,1fr) minmax(140px,.4fr) minmax(210px,.7fr)}body.admin-page-orders .adm-order-action-strip{grid-template-columns:1fr}body.admin-page-orders .ord-actions--compact{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:700px){body.admin-page-orders .ord-design-head{grid-template-columns:1fr}body.admin-page-orders .ord-item-price{text-align:left}body.admin-page-orders .ord-actions--compact{grid-template-columns:1fr 1fr}}
@@ -1330,15 +1334,19 @@ body.admin-page-orders .ord-design-proof-panel{position:relative;padding-right:1
 body.admin-page-orders .ord-design-proof-panel .ord-multi-artworks{width:100%;padding-right:0;overflow-x:auto}
 body.admin-page-orders .ord-design-proof-panel .ord-proof-wa{position:absolute;top:42px;right:14px;bottom:14px;width:76px;min-height:0;margin:0;z-index:4;box-shadow:0 8px 18px rgba(13,148,76,.2)}
 body.admin-page-orders .ord-item-price{justify-self:center;margin-left:-22px;text-align:center}
-/* White-based action colors keep labels and icons readable. */
-body.admin-page-orders .ord-actions--compact .aoc-btn{background:var(--action-bg,#f8fafc)!important;color:var(--action-ink,#334155)!important;border:1px solid var(--action-border,#cbd5e1)!important;box-shadow:0 2px 5px rgba(15,23,42,.04);transition:background .15s,box-shadow .15s}
-body.admin-page-orders .ord-actions--compact .aoc-btn--confirm{--action-bg:#f0fdf4;--action-ink:#166534;--action-border:#bbf7d0}
-body.admin-page-orders .ord-actions--compact .aoc-btn--call{--action-bg:#eff6ff;--action-ink:#1e40af;--action-border:#bfdbfe}
-body.admin-page-orders .ord-actions--compact .aoc-btn--wa,body.admin-page-orders .ord-actions--compact .aoc-btn--approve-wa{--action-bg:#ecfdf5;--action-ink:#065f46;--action-border:#a7f3d0}
-body.admin-page-orders .ord-actions--compact .aoc-btn--invoice{--action-bg:#f5f3ff;--action-ink:#5b21b6;--action-border:#ddd6fe}
-body.admin-page-orders .ord-actions--compact .aoc-btn--invoice-upload{--action-bg:#faf5ff;--action-ink:#6b21a8;--action-border:#e9d5ff}
-body.admin-page-orders .ord-actions--compact .aoc-btn--address{--action-bg:#fff7ed;--action-ink:#9a3412;--action-border:#fed7aa}
+/* Quick Actions palette from the supplied reference. Keep all variant colors here. */
+body.admin-page-orders .ord-actions--compact .aoc-btn{background:var(--action-bg,#f7f7fd)!important;color:var(--action-ink,#40516e)!important;border:1px solid var(--action-border,#e8eaf3)!important;border-radius:16px;box-shadow:none;white-space:normal;line-height:1.25;font-size:12px;font-weight:800;transition:background .15s,border-color .15s}
+body.admin-page-orders .ord-actions--compact .aoc-btn--confirm{--action-bg:#0fa447;--action-ink:#fff;--action-border:#0fa447;--action-hover:#0b8d3c}
+body.admin-page-orders .ord-actions--compact .aoc-btn--call{--action-bg:#843dff;--action-ink:#fff;--action-border:#843dff;--action-hover:#7330e8}
+body.admin-page-orders .ord-actions--compact .aoc-btn--wa,body.admin-page-orders .ord-actions--compact .aoc-btn--approve-wa{--action-bg:#0fa447;--action-ink:#fff;--action-border:#0fa447;--action-hover:#0b8d3c}
+body.admin-page-orders .ord-actions--compact .aoc-btn--invoice{--action-bg:#e9f6ff;--action-ink:#40516e;--action-border:#cfeafa;--action-hover:#dcf0fe}
+body.admin-page-orders .ord-actions--compact .aoc-btn--invoice-upload{--action-bg:#f7f7fd;--action-ink:#40516e;--action-border:#e8eaf3;--action-hover:#eeeefa}
+body.admin-page-orders .ord-actions--compact .aoc-btn--address{--action-bg:#fb8314;--action-ink:#fff;--action-border:#fb8314;--action-hover:#e8740b}
 body.admin-page-orders .ord-actions--compact .aoc-btn .aoc-ico,body.admin-page-orders .ord-actions--compact .aoc-btn span{color:inherit!important}
-body.admin-page-orders .ord-actions--compact .aoc-btn:hover{background:#fff!important;box-shadow:0 3px 10px rgba(15,23,42,.1)}
-body.admin-page-orders .ord-actions--compact .aoc-btn:focus-visible{outline:3px solid var(--action-ink,#334155);outline-offset:3px}
+body.admin-page-orders .ord-actions--compact .aoc-btn .aoc-ico{width:24px;height:24px;background:transparent!important;border-radius:0;flex-shrink:0}
+body.admin-page-orders .ord-actions--compact .aoc-btn:hover{background:var(--action-hover,#eeeefa)!important;box-shadow:none}
+body.admin-page-orders .ord-actions--compact .aoc-btn:focus-visible{outline:3px solid #40516e;outline-offset:3px}
 @media(max-width:700px){body.admin-page-orders .ord-item-price{justify-self:start;margin-left:0;text-align:left}}
+
+/* Locally rendered quick-action icons remain visible if the icon font fails. */
+body.admin-page-orders .ord-actions--compact .aoc-ico svg.ord-action-svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
